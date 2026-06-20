@@ -1,6 +1,6 @@
 {
     "name": "@huloglobal/vendure-plugin-geo-block",
-    "version": "0.2.0",
+    "version": "0.2.3",
     "description": "Geo-restrict your Vendure storefront by country, UK region or curated region presets (EU, EEA, British Isles, Europe, North America, Oceania, Worldwide-with-denylist). Per-channel settings exposed as Channel custom fields plus a dedicated admin page with a live preview of the resolved allow-list.",
     "license": "SEE LICENSE IN LICENSE",
     "author": "Wayne Garrison <wayne@garrison.me.uk>",
@@ -11,13 +11,19 @@
     },
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
-    "files": ["dist", "ui", "README.md", "CHANGELOG.md", "LICENSE"],
+    "files": [
+        "dist",
+        "ui",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE"
+    ],
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "prepublishOnly": "yarn build"
     },
     "dependencies": {
-        "@huloglobal/vendure-licence-sdk": "^0.1.0"
+        "@huloglobal/vendure-licence-sdk": "^0.2.0"
     },
     "peerDependencies": {
         "@vendure/core": ">=3.0.0",
@@ -25,7 +31,7 @@
         "typeorm": ">=0.3.0"
     },
     "devDependencies": {
-        "@huloglobal/vendure-licence-sdk": "^0.1.0",
+        "@huloglobal/vendure-licence-sdk": "^0.2.0",
         "@nestjs/common": "^10.0.0",
         "@vendure/core": "^3.6.0",
         "typeorm": "^0.3.0",

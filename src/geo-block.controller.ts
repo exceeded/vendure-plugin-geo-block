@@ -8,7 +8,7 @@ import {
     REGION_PRESETS,
     resolveAllowedCountries,
 } from './geo-regions';
-import { getOptions } from './plugin';
+import { GeoBlockPlugin, getOptions } from './plugin';
 import { getRealIp, getResolvedCountry, getResolvedRegion } from './proxy-headers';
 
 const loggerCtx = 'GeoBlockController';
@@ -192,6 +192,21 @@ export class GeoBlockController {
     @Get('presets')
     presets(@Res() res: Response) {
         return res.json({ presets: REGION_PRESETS });
+    }
+
+    /** Admin: plugin health + update availability. Read by the admin UI
+     * banner so the operator sees when a new version is on npm. */
+    @Get('status')
+    async status(@Ctx() ctx: RequestContext, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, false)) return;
+        const updater = GeoBlockPlugin.getUpdateChecker();
+        const update = updater ? updater.getStatus() : null;
+        return res.json({
+            packageName: GeoBlockPlugin.getPackageName(),
+            version: GeoBlockPlugin.getPackageVersion(),
+            update,
+            uptimeSec: Math.round(process.uptime()),
+        });
     }
 
     @Get('admin/channels')

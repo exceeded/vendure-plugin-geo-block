@@ -39,6 +39,20 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
             </vdr-action-bar>
         </vdr-page-block>
 
+        <vdr-page-block *ngIf="updateBanner">
+            <div class="update-banner" [class.major]="updateBanner.isMajor">
+                <div>
+                    <strong>📦 Update available</strong>
+                    {{ updateBanner.packageName }} {{ updateBanner.current }} → <strong>{{ updateBanner.latest }}</strong>
+                    <span *ngIf="updateBanner.isMajor" class="major-pill">major</span>
+                </div>
+                <div class="actions">
+                    <a [href]="'https://github.com/exceeded/vendure-plugin-geo-block/releases/tag/v' + updateBanner.latest" target="_blank" class="btn btn-sm btn-link">Release notes ↗</a>
+                    <button class="btn btn-sm" (click)="dismissUpdate()">Dismiss</button>
+                </div>
+            </div>
+        </vdr-page-block>
+
         <vdr-page-block *ngIf="!loading && current">
             <div class="card top-bar">
                 <div class="card-block">
@@ -520,6 +534,46 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .stat-card .lbl { font-size: 11px; color: var(--color-component-color-300); margin-top: 2px; }
 
         .save-bar { display: flex; gap: 8px; align-items: center; padding: 12px; background: var(--color-component-bg-100); border: 1px solid var(--color-component-border-200); border-radius: 6px; }
+
+        .update-banner {
+            display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+            padding: 12px 16px; border-radius: 8px;
+            background: #ecfeff; border: 1px solid #67e8f9;
+            color: #155e75; font-size: 13px;
+        }
+        .update-banner.major { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+        .update-banner strong { font-weight: 700; }
+        .update-banner .major-pill { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 8px; background: #f59e0b; color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        .update-banner .actions { display: flex; gap: 8px; align-items: center; }
+
+        /* Mobile-friendly layout under 768px */
+        @media (max-width: 767px) {
+            .chan-row { flex-direction: column; align-items: stretch; gap: 10px; }
+            .chan-row .form-select { width: 100%; min-width: 0; }
+            .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; white-space: nowrap; }
+            .tabs::-webkit-scrollbar { height: 4px; }
+            .tab { flex-shrink: 0; padding: 10px 14px; min-height: 44px; }
+            .mode-grid { grid-template-columns: 1fr; }
+            .preset-grid { grid-template-columns: 1fr; }
+            .picker { flex-direction: column; align-items: stretch; }
+            .picker .form-input { width: 100%; min-width: 0; }
+            .picker .btn { width: 100%; }
+            .sim-grid { grid-template-columns: 1fr; max-width: 100%; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .filter-input { max-width: 100%; }
+            textarea.form-input { max-width: 100%; }
+            .save-bar { flex-direction: column; align-items: stretch; gap: 8px; }
+            .save-bar button { width: 100%; min-height: 44px; }
+            table { font-size: 12px; }
+            .update-banner { flex-direction: column; align-items: flex-start; }
+            .update-banner .actions { width: 100%; justify-content: flex-end; }
+            .form-row label { font-size: 14px; }
+        }
+        @media (max-width: 360px) {
+            .stats-grid { grid-template-columns: 1fr; }
+            .uk-row { flex-direction: column; }
+            .uk-pill { width: 100%; justify-content: center; }
+        }
     `],
 })
 export class GeoBlockComponent implements OnInit {
@@ -544,6 +598,9 @@ export class GeoBlockComponent implements OnInit {
 
     stats: any = null;
     statsDays = 30;
+
+    updateBanner: { packageName: string; current: string; latest: string; isMajor: boolean } | null = null;
+    private dismissKey = 'huloglobal-geo-block-update-dismissed';
 
     presets: PresetMeta[] = [];
     presetGroups = [
@@ -572,7 +629,29 @@ export class GeoBlockComponent implements OnInit {
             next: r => { this.presets = r.presets || []; this.cdr.markForCheck(); },
             error: () => { /* presets are nice-to-have, not required */ },
         });
+        this.loadStatus();
         this.reload();
+    }
+
+    loadStatus() {
+        this.http.get<any>('/geo-block/status').subscribe({
+            next: (s) => {
+                const u = s?.update;
+                if (!u?.updateAvailable || !u.latest) return;
+                let dismissed = '';
+                try { dismissed = localStorage.getItem(this.dismissKey) || ''; } catch {}
+                if (dismissed === u.latest) return;
+                this.updateBanner = { packageName: u.packageName, current: u.current, latest: u.latest, isMajor: !!u.isMajor };
+                this.cdr.markForCheck();
+            },
+            error: () => { /* nice-to-have */ },
+        });
+    }
+
+    dismissUpdate() {
+        if (!this.updateBanner) return;
+        try { localStorage.setItem(this.dismissKey, this.updateBanner.latest); } catch {}
+        this.updateBanner = null;
     }
 
     reload() {

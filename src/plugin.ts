@@ -1,8 +1,12 @@
 import { LanguageCode, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
-import { RevocationChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
+import { RevocationChecker, UpdateChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
 import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
 import { REGION_PRESETS } from './geo-regions';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PKG_VERSION: string = require('../package.json').version;
+const PKG_NAME = '@huloglobal/vendure-plugin-geo-block';
 
 export interface MaintenanceWindow {
     /** ISO-8601 timestamp. */
@@ -134,6 +138,11 @@ export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
 })
 export class GeoBlockPlugin {
     private static revocation: RevocationChecker | null = null;
+    private static updateChecker: UpdateChecker | null = null;
+
+    static getUpdateChecker(): UpdateChecker | null { return GeoBlockPlugin.updateChecker; }
+    static getPackageVersion(): string { return PKG_VERSION; }
+    static getPackageName(): string { return PKG_NAME; }
 
     static init(options: GeoBlockPluginOptions): Type<GeoBlockPlugin> {
         cachedOptions = options;
@@ -141,6 +150,10 @@ export class GeoBlockPlugin {
         if (!GeoBlockPlugin.revocation) {
             GeoBlockPlugin.revocation = new RevocationChecker(REVOCATION_URL);
             GeoBlockPlugin.revocation.start();
+        }
+        if (!GeoBlockPlugin.updateChecker) {
+            GeoBlockPlugin.updateChecker = new UpdateChecker(PKG_NAME, PKG_VERSION);
+            GeoBlockPlugin.updateChecker.start();
         }
 
         const host = (options.publicBaseUrl || '')
