@@ -1,5 +1,5 @@
 import { LanguageCode, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
-import { RevocationChecker, UpdateChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
+import { RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
 import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
 import { REGION_PRESETS } from './geo-regions';
@@ -28,6 +28,23 @@ export interface GeoBlockPluginOptions {
      *  request (except IPs on the per-channel allowlist or this option's
      *  own `allowedIps`). */
     maintenanceWindow?: MaintenanceWindow;
+
+    // ── Security ────────────────────────────────────────────────────────
+    /** Rate limit for public endpoints, keyed by IP. Default 120/60s. */
+    rateLimit?: { capacity: number; windowMs: number };
+    /** Per-install salt for hashing IPs stored in the audit log. */
+    ipSalt?: string;
+    /** Store hashed IPs in `geo_block_event.ip` instead of raw. Default true. */
+    hashAuditIps?: boolean;
+    /** HMAC secret used by the `?country=` override on `/geo-block/check`.
+     *  When set, the override is honoured only if the request carries a
+     *  matching `country.sig` query string. Without a secret the override
+     *  is honoured unconditionally (legacy behaviour). */
+    signingSecret?: string;
+
+    // ── Retention ───────────────────────────────────────────────────────
+    /** Auto-prune `geo_block_event` rows older than `days` days. */
+    retention?: RetentionOptions;
 }
 
 const HULO_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -108,8 +125,13 @@ export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
             {
                 name: 'geoBlockAllowedGbRegions', type: 'string', list: true, public: true,
                 defaultValue: [],
-                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: allowed UK regions' }],
-                description: [{ languageCode: LanguageCode.en, value: 'When GB is allowed, optionally restrict to ENG / WLS / SCT / NIR. Empty = whole UK.' }],
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: allowed UK regions (legacy)' }],
+                description: [{ languageCode: LanguageCode.en, value: 'Legacy GB-only sub-region filter. Prefer the generic "allowed subdivisions" field below.' }],
+            },
+            {
+                name: 'geoBlockAllowedSubdivisions', type: 'text', public: true, nullable: true,
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: allowed subdivisions per country' }],
+                description: [{ languageCode: LanguageCode.en, value: 'JSON object mapping ISO country codes to allowed ISO-3166-2 subdivision codes. Example: {"US":["CA","NY"],"DE":["BY","BW"]}. Empty array for a country = all subdivisions allowed.' }],
             },
             {
                 name: 'geoBlockIpAllowlist', type: 'string', list: true, public: false,

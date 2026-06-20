@@ -12,12 +12,15 @@ interface ChannelRow {
     extraAllowed: string[];
     blockedCountries: string[];
     allowedGbRegions: string[];
+    allowedSubdivisions: Record<string, string[]>;
     ipAllowlist: string[];
     blockMessage: string;
     blockRedirectUrl: string;
     blockLogoUrl: string;
     resolved: { allowedCountries: string[] | null; blockedCountries: string[] };
 }
+
+interface SubdivisionDef { code: string; label: string; }
 
 interface PresetMeta { key: string; label: string; kind: string; description: string; countryCount: number | null; }
 
@@ -193,16 +196,47 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                 </div>
             </vdr-page-block>
 
-            <vdr-page-block *ngIf="isUkResolved()">
+            <vdr-page-block>
                 <div class="card">
                     <div class="card-block">
-                        <h3 class="step-title">UK subdivisions <small>(only applies when GB is allowed)</small></h3>
-                        <p class="hint">Tighten to specific UK regions. Leave empty or pick all four to allow the whole UK.</p>
-                        <div class="uk-row">
-                            <label *ngFor="let r of ukRegions" class="uk-pill" [class.active]="current.allowedGbRegions.includes(r.value)">
-                                <input type="checkbox" [checked]="current.allowedGbRegions.includes(r.value)" (change)="toggleUkRegion(r.value)">
-                                {{ r.label }}
-                            </label>
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                            <div>
+                                <h3 class="step-title" style="margin-bottom:0">Country subdivisions <small>(optional)</small></h3>
+                                <p class="hint" style="margin:4px 0 0">Tighten to specific regions inside any allowed country — US states, CA provinces, AU states, DE Länder, UK regions, etc.</p>
+                            </div>
+                            <button class="btn btn-sm" (click)="showSubdivisions = !showSubdivisions">
+                                {{ showSubdivisions ? 'Hide' : 'Show subdivisions' }}
+                                <span *ngIf="subdivisionCount() > 0" class="status-pill on" style="margin-left:8px">{{ subdivisionCount() }} configured</span>
+                            </button>
+                        </div>
+
+                        <div *ngIf="showSubdivisions" style="margin-top:18px">
+                            <div class="picker" style="margin-bottom:14px">
+                                <label class="lbl">Add a country</label>
+                                <select class="form-select" [(ngModel)]="newSubdivisionCountry">
+                                    <option value="">— pick a country with known subdivisions —</option>
+                                    <option *ngFor="let key of subdivisionCountries()" [value]="key">{{ key }} ({{ subdivisionsCatalogue[key].length }} subdivisions)</option>
+                                </select>
+                                <button class="btn btn-secondary btn-sm" (click)="addSubdivisionCountry()" [disabled]="!newSubdivisionCountry">+ Add</button>
+                            </div>
+
+                            <div *ngFor="let cc of activeSubdivisionCountries()" class="card" style="margin:10px 0;background:var(--color-component-bg-100)">
+                                <div class="card-block">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                                        <h4 style="margin:0;font-weight:600">{{ cc }} — {{ subdivisionsCatalogue[cc]?.length || 0 }} subdivisions available</h4>
+                                        <button class="btn btn-link btn-sm" (click)="removeSubdivisionCountry(cc)" style="color:#dc2626">Remove</button>
+                                    </div>
+                                    <p class="hint">Pick the subdivisions to allow. Leave empty = allow the whole country.</p>
+                                    <div class="preset-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+                                        <label *ngFor="let s of subdivisionsCatalogue[cc]" class="preset-card" [class.active]="isSubdivisionPicked(cc, s.code)" style="padding:8px 12px">
+                                            <input type="checkbox" [checked]="isSubdivisionPicked(cc, s.code)" (change)="toggleSubdivision(cc, s.code)">
+                                            <div style="font-size:13px">{{ s.label }} <span style="color:var(--color-component-color-300);font-size:11px">({{ s.code }})</span></div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div *ngIf="!activeSubdivisionCountries().length" class="hint">No subdivisions configured. Pick a country above to add one.</div>
                         </div>
                     </div>
                 </div>
@@ -599,6 +633,12 @@ export class GeoBlockComponent implements OnInit {
     stats: any = null;
     statsDays = 30;
 
+    /** Subdivisions: hidden by default. The catalogue is loaded from
+     *  `/geo-block/subdivisions` on mount. */
+    showSubdivisions = false;
+    newSubdivisionCountry = '';
+    subdivisionsCatalogue: Record<string, SubdivisionDef[]> = {};
+
     updateBanner: { packageName: string; current: string; latest: string; isMajor: boolean } | null = null;
     private dismissKey = 'huloglobal-geo-block-update-dismissed';
 
@@ -629,8 +669,62 @@ export class GeoBlockComponent implements OnInit {
             next: r => { this.presets = r.presets || []; this.cdr.markForCheck(); },
             error: () => { /* presets are nice-to-have, not required */ },
         });
+        this.http.get<{ subdivisions: Record<string, SubdivisionDef[]> }>('/geo-block/subdivisions').subscribe({
+            next: r => { this.subdivisionsCatalogue = r.subdivisions || {}; this.cdr.markForCheck(); },
+            error: () => { /* nice-to-have */ },
+        });
         this.loadStatus();
         this.reload();
+    }
+
+    subdivisionCountries(): string[] {
+        return Object.keys(this.subdivisionsCatalogue).sort();
+    }
+
+    activeSubdivisionCountries(): string[] {
+        if (!this.current) return [];
+        return Object.keys(this.current.allowedSubdivisions || {}).sort();
+    }
+
+    subdivisionCount(): number {
+        if (!this.current?.allowedSubdivisions) return 0;
+        return Object.keys(this.current.allowedSubdivisions).filter(
+            k => (this.current!.allowedSubdivisions[k] || []).length > 0,
+        ).length;
+    }
+
+    isSubdivisionPicked(country: string, code: string): boolean {
+        return !!this.current?.allowedSubdivisions?.[country]?.includes(code);
+    }
+
+    toggleSubdivision(country: string, code: string) {
+        if (!this.current) return;
+        const subs = { ...(this.current.allowedSubdivisions || {}) };
+        const list = subs[country] ? [...subs[country]] : [];
+        const idx = list.indexOf(code);
+        if (idx >= 0) list.splice(idx, 1);
+        else list.push(code);
+        subs[country] = list;
+        this.current.allowedSubdivisions = subs;
+        this.markDirty();
+    }
+
+    addSubdivisionCountry() {
+        if (!this.current || !this.newSubdivisionCountry) return;
+        const cc = this.newSubdivisionCountry.toUpperCase();
+        const subs = { ...(this.current.allowedSubdivisions || {}) };
+        if (!subs[cc]) subs[cc] = [];
+        this.current.allowedSubdivisions = subs;
+        this.newSubdivisionCountry = '';
+        this.markDirty();
+    }
+
+    removeSubdivisionCountry(cc: string) {
+        if (!this.current?.allowedSubdivisions) return;
+        const subs = { ...this.current.allowedSubdivisions };
+        delete subs[cc];
+        this.current.allowedSubdivisions = subs;
+        this.markDirty();
     }
 
     loadStatus() {
@@ -663,6 +757,7 @@ export class GeoBlockComponent implements OnInit {
                     ...c,
                     mode: c.mode || 'block',
                     ipAllowlist: c.ipAllowlist || [],
+                    allowedSubdivisions: c.allowedSubdivisions || {},
                     blockMessage: c.blockMessage || '',
                     blockRedirectUrl: c.blockRedirectUrl || '',
                     blockLogoUrl: c.blockLogoUrl || '',
@@ -823,6 +918,7 @@ export class GeoBlockComponent implements OnInit {
             extraAllowed: this.current.extraAllowed,
             blockedCountries: this.current.blockedCountries,
             allowedGbRegions: this.current.allowedGbRegions,
+            allowedSubdivisions: this.current.allowedSubdivisions || {},
             ipAllowlist: this.current.ipAllowlist,
             blockMessage: this.current.blockMessage,
             blockRedirectUrl: this.current.blockRedirectUrl,

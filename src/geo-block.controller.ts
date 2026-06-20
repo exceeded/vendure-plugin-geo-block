@@ -1,7 +1,15 @@
-import { Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Injectable, OnApplicationBootstrap, OnModuleDestroy, Post, Query, Req, Res } from '@nestjs/common';
+import {
+    applySecurityHeaders,
+    hashIp,
+    RateLimiter,
+    startRetentionSweeper,
+    verifySignedValue,
+} from '@huloglobal/vendure-licence-sdk';
 import { Ctx, Logger, Permission, RequestContext, TransactionalConnection } from '@vendure/core';
 import { Request, Response } from 'express';
 import { GeoBlockEvent } from './geo-block-event.entity';
+import { SUBDIVISIONS, hasSubdivisions } from './subdivisions';
 import {
     isAllowed,
     ipMatchesAny,
@@ -34,6 +42,7 @@ interface SiteConfig {
         allowedCountries: string[] | null;
         blockedCountries: string[];
         allowedGbRegions: string[];
+        allowedSubdivisions: Record<string, string[]>;
         allowedRegions: string[];
         blockMessage: string;
         blockRedirectUrl: string | null;
@@ -52,7 +61,8 @@ const DEFAULTS: SiteConfig = {
         mode: 'block',
         allowedCountries: ['GB'],
         blockedCountries: [],
-        allowedGbRegions: ['ENG', 'WLS'],
+        allowedGbRegions: [],
+        allowedSubdivisions: {},
         allowedRegions: [],
         blockMessage: '',
         blockRedirectUrl: null,
@@ -60,6 +70,25 @@ const DEFAULTS: SiteConfig = {
     },
     companyData: { showCompanyNumber: false, companyNumber: '' },
 };
+
+function parseSubdivisions(raw: any): Record<string, string[]> {
+    if (!raw) return {};
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+        const out: Record<string, string[]> = {};
+        for (const [k, v] of Object.entries(raw)) {
+            if (Array.isArray(v)) out[k.toUpperCase()] = v.filter(x => typeof x === 'string').map(x => x.toUpperCase());
+        }
+        return out;
+    }
+    if (typeof raw === 'string') {
+        try {
+            return parseSubdivisions(JSON.parse(raw));
+        } catch {
+            return {};
+        }
+    }
+    return {};
+}
 
 const parseList = (raw: any, fallback: string[] = []): string[] => {
     if (Array.isArray(raw)) return raw.filter(v => typeof v === 'string');
@@ -87,11 +116,47 @@ const parseList = (raw: any, fallback: string[] = []): string[] => {
  *    POST /geo-block/admin/gc          — prune old GeoBlockEvent rows
  */
 @Controller('geo-block')
-export class GeoBlockController {
+export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestroy {
+    private limiter: RateLimiter | null = null;
+    private stopRetention: (() => void) | null = null;
+
     constructor(private connection: TransactionalConnection) {}
 
+    onApplicationBootstrap(): void {
+        const opts = getOptions();
+        const rl = opts.rateLimit || { capacity: 120, windowMs: 60_000 };
+        this.limiter = new RateLimiter({ capacity: rl.capacity, windowMs: rl.windowMs });
+        if (opts.retention) {
+            this.stopRetention = startRetentionSweeper({
+                getConnection: () => this.connection.rawConnection,
+                table: 'geo_block_event',
+                options: opts.retention,
+                label: 'geo-block',
+            });
+        }
+    }
+
+    onModuleDestroy(): void {
+        this.stopRetention?.();
+        this.stopRetention = null;
+    }
+
+    private rateLimited(req: Request, res: Response, bucket: string): boolean {
+        const ip = (req.headers['cf-connecting-ip'] as string) || req.ip || '';
+        if (!ip || !this.limiter) return false;
+        if (!this.limiter.allow(`${bucket}|${ip}`)) {
+            res.setHeader('Retry-After', '60');
+            res.status(429).json({ error: 'Too many requests' });
+            return true;
+        }
+        return false;
+    }
+
     @Get('site-config')
-    async getConfig(@Req() req: Request): Promise<SiteConfig> {
+    async getConfig(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<SiteConfig | void> {
+        applySecurityHeaders(res);
+        if (this.rateLimited(req, res, 'site-config')) return;
+
         const headerToken = (req.headers['vendure-token'] as string)
             || (req.headers['x-vendure-token'] as string)
             || (req.query.token as string)
@@ -115,6 +180,9 @@ export class GeoBlockController {
      */
     @Get('check')
     async check(@Req() req: Request, @Res() res: Response) {
+        applySecurityHeaders(res);
+        if (this.rateLimited(req, res, 'check')) return;
+
         const headerToken = (req.headers['vendure-token'] as string)
             || (req.headers['x-vendure-token'] as string)
             || (req.query.token as string)
@@ -125,17 +193,28 @@ export class GeoBlockController {
         if (!row) return res.json({ allowed: true, reason: 'unknown-channel' });
         const cfg = this.buildConfig(token, row);
 
-        // Optional override (?country=US) for testing — non-prod only;
-        // honoured but logged at the trust level of the caller.
+        const opts = getOptions();
         const ip = getRealIp(req);
-        const country = (req.query.country as string)
-            || getResolvedCountry(req)
-            || null;
+
+        // Country override: when a `signingSecret` is configured, only
+        // honour `?country=XX` when paired with `?countrySig=<hmac>`.
+        // Without a secret, override is unconditionally honoured (legacy).
+        const queryCountry = String(req.query.country || '');
+        let overrideCountry: string | null = null;
+        if (queryCountry) {
+            if (opts.signingSecret) {
+                const sig = String(req.query.countrySig || '');
+                const verified = verifySignedValue(`${queryCountry}.${sig}`, opts.signingSecret);
+                if (verified === queryCountry) overrideCountry = queryCountry;
+            } else {
+                overrideCountry = queryCountry;
+            }
+        }
+        const country = overrideCountry || getResolvedCountry(req) || null;
         const region = (req.query.region as string)
             || getResolvedRegion(req)
             || null;
 
-        const opts = getOptions();
         const allowlist = parseList(row.ipAllowlist || '');
         const channelId = Number(row.id) || 1;
 
@@ -166,6 +245,7 @@ export class GeoBlockController {
             allowedCountries: cfg.geoBlock.allowedCountries,
             blockedCountries: cfg.geoBlock.blockedCountries,
             allowedGbRegions: cfg.geoBlock.allowedGbRegions,
+            allowedSubdivisions: cfg.geoBlock.allowedSubdivisions,
         });
         if (!verdict.allowed) {
             await this.logEvent({
@@ -194,6 +274,14 @@ export class GeoBlockController {
         return res.json({ presets: REGION_PRESETS });
     }
 
+    /** Catalogue of country subdivisions. Lets the admin UI show a
+     *  picker for any allowed country that has known subdivisions
+     *  (US states, CA provinces, AU states, DE Länder, etc.). */
+    @Get('subdivisions')
+    subdivisions(@Res() res: Response) {
+        return res.json({ subdivisions: SUBDIVISIONS });
+    }
+
     /** Admin: plugin health + update availability. Read by the admin UI
      * banner so the operator sees when a new version is on npm. */
     @Get('status')
@@ -220,6 +308,7 @@ export class GeoBlockController {
                     customFieldsGeoblockallowedcountries           AS extraAllowed,
                     customFieldsGeoblockblockedcountries           AS blockedCountries,
                     customFieldsGeoblockallowedgbregions           AS allowedGbRegions,
+                    customFieldsGeoblockallowedsubdivisions        AS allowedSubdivisionsJson,
                     customFieldsGeoblockipallowlist                AS ipAllowlist,
                     customFieldsGeoblockblockmessage               AS blockMessage,
                     customFieldsGeoblockblockredirecturl           AS blockRedirectUrl,
@@ -246,6 +335,7 @@ export class GeoBlockController {
                 extraAllowed,
                 blockedCountries,
                 allowedGbRegions: parseList(r.allowedGbRegions),
+                allowedSubdivisions: parseSubdivisions(r.allowedSubdivisionsJson),
                 ipAllowlist: parseList(r.ipAllowlist),
                 blockMessage: r.blockMessage || '',
                 blockRedirectUrl: r.blockRedirectUrl || '',
@@ -273,6 +363,19 @@ export class GeoBlockController {
             return JSON.stringify(Array.from(new Set(clean)));
         };
         const mode = body.mode === 'soft' ? 'soft' : 'block';
+        // Subdivisions arrive as { "US": ["CA", "NY"], ... }. Normalise
+        // and re-serialise to JSON for storage.
+        const normSubdivisions = (raw: any): string => {
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return '{}';
+            const out: Record<string, string[]> = {};
+            for (const [k, v] of Object.entries(raw)) {
+                if (!Array.isArray(v)) continue;
+                const codes = v.filter(x => typeof x === 'string')
+                    .map(x => x.trim().toUpperCase()).filter(Boolean);
+                if (codes.length) out[String(k).toUpperCase()] = Array.from(new Set(codes));
+            }
+            return JSON.stringify(out);
+        };
         const updated = await this.connection.rawConnection.query(
             `UPDATE channel
              SET customFieldsGeoblockenabled = ?,
@@ -281,6 +384,7 @@ export class GeoBlockController {
                  customFieldsGeoblockallowedcountries = ?,
                  customFieldsGeoblockblockedcountries = ?,
                  customFieldsGeoblockallowedgbregions = ?,
+                 customFieldsGeoblockallowedsubdivisions = ?,
                  customFieldsGeoblockipallowlist = ?,
                  customFieldsGeoblockblockmessage = ?,
                  customFieldsGeoblockblockredirecturl = ?,
@@ -293,6 +397,7 @@ export class GeoBlockController {
                 normList(body.extraAllowed),
                 normList(body.blockedCountries),
                 normList(body.allowedGbRegions),
+                normSubdivisions(body.allowedSubdivisions),
                 normIpList(body.ipAllowlist),
                 String(body.blockMessage || '').slice(0, 4000),
                 String(body.blockRedirectUrl || '').slice(0, 2048),
@@ -436,7 +541,9 @@ export class GeoBlockController {
                 mode: (r.geoBlockMode === 'soft' ? 'soft' : 'block'),
                 allowedCountries: resolved.allowed,
                 blockedCountries: resolved.blocked,
-                allowedGbRegions: parseList(r.allowedGbRegions, ['ENG', 'WLS']),
+                // No default UK regions — hidden unless explicitly configured.
+                allowedGbRegions: parseList(r.allowedGbRegions, []),
+                allowedSubdivisions: parseSubdivisions(r.allowedSubdivisionsJson),
                 allowedRegions,
                 blockMessage: String(r.blockMessage || ''),
                 blockRedirectUrl: r.blockRedirectUrl || null,
@@ -447,6 +554,15 @@ export class GeoBlockController {
                 companyNumber: String(r.companyNumber || ''),
             },
         };
+    }
+
+    /** Apply IP hashing when the plugin is configured to anonymise audit
+     *  rows. Default is to hash. */
+    private maybeHashIp(ip: string | null): any {
+        if (!ip) return null;
+        const opts = getOptions();
+        if (opts.hashAuditIps === false) return ip.slice(0, 64);
+        return hashIp(ip, opts.ipSalt || 'hulo-geo-block-default-salt');
     }
 
     private async logEvent(input: {
@@ -465,7 +581,7 @@ export class GeoBlockController {
                 channelId: input.channelId,
                 country: input.country ? input.country.toUpperCase().slice(0, 8) : null as any,
                 region: input.region ? input.region.toUpperCase().slice(0, 8) : null as any,
-                ip: input.ip ? input.ip.slice(0, 64) : null as any,
+                ip: this.maybeHashIp(input.ip),
                 userAgent: input.ua ? String(input.ua).slice(0, 500) : null as any,
                 url: (input.url || '').slice(0, 2048),
                 decision: input.decision,

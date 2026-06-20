@@ -243,26 +243,43 @@ export function resolveAllowedCountries(input: {
  * Decide whether a given (country, region) tuple is allowed by the
  * resolved rules. Shared by the controller and the admin "what-if"
  * preview, so the storefront and the simulator never drift apart.
+ *
+ * `allowedSubdivisions` maps an ISO country code to the list of
+ * ISO-3166-2 subdivisions that are allowed within it. An empty array
+ * for a country means "all subdivisions allowed" — the country itself
+ * is allowed but no sub-region filter applies.
+ *
+ * The legacy `allowedGbRegions` is honoured as a fallback for GB.
  */
 export function isAllowed(
     country: string | null,
-    gbRegion: string | null,
+    region: string | null,
     rules: {
         enabled: boolean;
         allowedCountries: string[] | null;
         blockedCountries: string[];
         allowedGbRegions: string[];
+        allowedSubdivisions?: Record<string, string[]>;
     },
-): { allowed: boolean; reason: 'disabled' | 'denylist' | 'country-not-allowed' | 'uk-region-not-allowed' | 'ok' } {
+): { allowed: boolean; reason: 'disabled' | 'denylist' | 'country-not-allowed' | 'uk-region-not-allowed' | 'subdivision-not-allowed' | 'ok' } {
     if (!rules.enabled) return { allowed: true, reason: 'disabled' };
     const cc = (country || '').toUpperCase();
-    const rr = (gbRegion || '').toUpperCase();
+    const rr = (region || '').toUpperCase();
     if (cc && rules.blockedCountries.includes(cc)) {
         return { allowed: false, reason: 'denylist' };
     }
     if (rules.allowedCountries !== null && cc && !rules.allowedCountries.includes(cc)) {
         return { allowed: false, reason: 'country-not-allowed' };
     }
+    // Generic subdivision check first — applies to any country with
+    // configured allowed subdivisions.
+    const subs = rules.allowedSubdivisions?.[cc];
+    if (subs && subs.length > 0) {
+        if (rr && !subs.map(s => s.toUpperCase()).includes(rr)) {
+            return { allowed: false, reason: 'subdivision-not-allowed' };
+        }
+    }
+    // Legacy GB-only filter — kept for backwards compatibility.
     if (cc === 'GB' && rules.allowedGbRegions.length > 0) {
         if (rr && !rules.allowedGbRegions.includes(rr)) {
             return { allowed: false, reason: 'uk-region-not-allowed' };
