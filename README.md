@@ -1,4 +1,4 @@
-# @hulo/vendure-plugin-geo-block
+# @huloglobal/vendure-plugin-geo-block
 
 Per-channel storefront geo-restriction for Vendure. Allow / block traffic
 by country, by curated region preset (EU, EEA, British Isles, all of
@@ -29,13 +29,13 @@ Maintained by Wayne Garrison.
 ## Install
 
 ```bash
-yarn add @hulo/vendure-plugin-geo-block
+yarn add @huloglobal/vendure-plugin-geo-block
 ```
 
 ## Wire up
 
 ```ts
-import { GeoBlockPlugin } from '@hulo/vendure-plugin-geo-block';
+import { GeoBlockPlugin } from '@huloglobal/vendure-plugin-geo-block';
 
 export const config: VendureConfig = {
   plugins: [
@@ -50,7 +50,7 @@ export const config: VendureConfig = {
 Add the admin UI extension:
 
 ```ts
-import { GeoBlockPlugin } from '@hulo/vendure-plugin-geo-block';
+import { GeoBlockPlugin } from '@huloglobal/vendure-plugin-geo-block';
 
 compileUiExtensions({
   outputPath: 'admin-ui',

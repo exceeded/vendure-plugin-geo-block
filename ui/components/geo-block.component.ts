@@ -7,15 +7,19 @@ interface ChannelRow {
     code: string;
     token: string;
     enabled: boolean;
+    mode: 'block' | 'soft';
     allowedRegions: string[];
     extraAllowed: string[];
     blockedCountries: string[];
     allowedGbRegions: string[];
+    ipAllowlist: string[];
+    blockMessage: string;
+    blockRedirectUrl: string;
+    blockLogoUrl: string;
     resolved: { allowedCountries: string[] | null; blockedCountries: string[] };
 }
 
-interface RegionDef { value: string; label: string; hint: string; countries: number; }
-interface CountryDef { value: string; label: string; flag: string; }
+interface PresetMeta { key: string; label: string; kind: string; description: string; countryCount: number | null; }
 
 @Component({
     selector: 'ees-geo-block',
@@ -23,7 +27,10 @@ interface CountryDef { value: string; label: string; flag: string; }
     template: `
         <vdr-page-block>
             <vdr-action-bar>
-                <vdr-ab-left><h2>Site access (geo-block)</h2></vdr-ab-left>
+                <vdr-ab-left>
+                    <h2>Site access</h2>
+                    <p class="subtitle">Per-channel geo-restrictions, IP allowlist, audit log.</p>
+                </vdr-ab-left>
                 <vdr-ab-right>
                     <button class="btn btn-link" (click)="reload()" [disabled]="loading">
                         <clr-icon shape="refresh"></clr-icon> Refresh
@@ -32,8 +39,8 @@ interface CountryDef { value: string; label: string; flag: string; }
             </vdr-action-bar>
         </vdr-page-block>
 
-        <vdr-page-block>
-            <div class="card" *ngIf="!loading && current">
+        <vdr-page-block *ngIf="!loading && current">
+            <div class="card top-bar">
                 <div class="card-block">
                     <div class="chan-row">
                         <label class="lbl">Channel</label>
@@ -44,172 +51,332 @@ interface CountryDef { value: string; label: string; flag: string; }
                         <span class="status-pill" [class.on]="current.enabled" [class.off]="!current.enabled">
                             {{ current.enabled ? 'GEO-BLOCK ON' : 'GEO-BLOCK OFF' }}
                         </span>
-                        <button class="btn btn-sm btn-link" (click)="toggleEnabled()">
+                        <button class="btn btn-sm" [class.btn-warning]="current.enabled" [class.btn-primary]="!current.enabled" (click)="toggleEnabled()">
                             {{ current.enabled ? 'Turn off' : 'Turn on' }}
                         </button>
-                    </div>
 
-                    <p class="hint" *ngIf="!current.enabled">
-                        Geo-block is <strong>off</strong> — everyone can visit the storefront, regardless of the settings below.
-                        Use the toggle above to turn it on.
-                    </p>
-                </div>
-            </div>
-        </vdr-page-block>
-
-        <vdr-page-block *ngIf="!loading && current">
-            <div class="card">
-                <div class="card-block">
-                    <h3 class="step-title">1 · Choose a mode</h3>
-                    <p class="hint">Pick one — the rest of the page changes based on what you select.</p>
-
-                    <div class="mode-grid">
-                        <label class="mode-card" [class.active]="mode === 'specific'">
-                            <input type="radio" name="mode" value="specific" [(ngModel)]="mode" (ngModelChange)="onModeChange()">
-                            <div class="mode-title">Allow only specific places</div>
-                            <div class="mode-body">Pick regions and / or individual countries. Everyone else is blocked. Best for &ldquo;UK only&rdquo; or &ldquo;UK + Europe&rdquo;.</div>
-                        </label>
-
-                        <label class="mode-card" [class.active]="mode === 'worldwide'">
-                            <input type="radio" name="mode" value="worldwide" [(ngModel)]="mode" (ngModelChange)="onModeChange()">
-                            <div class="mode-title">Allow worldwide, except blocked</div>
-                            <div class="mode-body">Everyone is welcome <em>except</em> the countries you add to the block list. Best for &ldquo;serve everyone but sanction-targeted countries&rdquo;.</div>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </vdr-page-block>
-
-        <vdr-page-block *ngIf="!loading && current && mode === 'specific'">
-            <div class="card">
-                <div class="card-block">
-                    <h3 class="step-title">2 · Allowed regions <small>(one click)</small></h3>
-                    <p class="hint">Each preset adds a whole group of countries. Tick as many as you want — they stack.</p>
-
-                    <div class="preset-grid">
-                        <label *ngFor="let r of regionDefs" class="preset-card" [class.active]="isRegionPicked(r.value)">
-                            <input type="checkbox" [checked]="isRegionPicked(r.value)" (change)="toggleRegion(r.value)">
-                            <div class="preset-label">{{ r.label }}</div>
-                            <div class="preset-hint">{{ r.hint }}<span *ngIf="r.countries"> · {{ r.countries }} countries</span></div>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </vdr-page-block>
-
-        <vdr-page-block *ngIf="!loading && current && mode === 'specific'">
-            <div class="card">
-                <div class="card-block">
-                    <h3 class="step-title">3 · Add extra countries <small>(optional)</small></h3>
-                    <p class="hint">Countries that aren't in any preset above — for example: add 🇯🇵 Japan or 🇮🇱 Israel while keeping &ldquo;UK only&rdquo; selected.</p>
-
-                    <div class="chip-row">
-                        <span class="chip" *ngFor="let cc of current.extraAllowed">
-                            {{ flag(cc) }} {{ countryLabel(cc) }}
-                            <button class="chip-x" (click)="removeExtra(cc)" title="Remove">×</button>
+                        <span class="mode-pill" *ngIf="current.enabled" [class.mode-block]="current.mode === 'block'" [class.mode-soft]="current.mode === 'soft'">
+                            {{ current.mode === 'soft' ? 'Soft block (banner)' : 'Full block' }}
                         </span>
-                        <span *ngIf="!current.extraAllowed.length" class="hint inline">None yet.</span>
+
+                        <span class="dirty-flag" *ngIf="dirty">● Unsaved</span>
                     </div>
 
-                    <div class="picker">
-                        <select class="form-select" [(ngModel)]="newExtra">
-                            <option value="">— pick a country —</option>
-                            <option *ngFor="let c of unpickedExtras()" [value]="c.value">{{ c.flag }} {{ c.label }}</option>
-                        </select>
-                        <button class="btn btn-secondary btn-sm" (click)="addExtra()" [disabled]="!newExtra">+ Add</button>
-                    </div>
-                </div>
-            </div>
-        </vdr-page-block>
-
-        <vdr-page-block *ngIf="!loading && current">
-            <div class="card">
-                <div class="card-block">
-                    <h3 class="step-title">{{ mode === 'specific' ? '4' : '2' }} · Block specific countries</h3>
-                    <p class="hint" *ngIf="mode === 'specific'">Countries in this list are always blocked, even if they would otherwise be allowed by a preset. Useful for sanctioned countries inside a region you allow (e.g. block 🇷🇺 Russia while allowing &ldquo;Europe&rdquo;).</p>
-                    <p class="hint" *ngIf="mode === 'worldwide'">In worldwide mode this list is the <em>only</em> filter — everyone except these countries can visit.</p>
-
-                    <div class="chip-row">
-                        <span class="chip blocked" *ngFor="let cc of current.blockedCountries">
-                            {{ flag(cc) }} {{ countryLabel(cc) }}
-                            <button class="chip-x" (click)="removeBlocked(cc)" title="Remove">×</button>
-                        </span>
-                        <span *ngIf="!current.blockedCountries.length" class="hint inline">None yet.</span>
-                    </div>
-
-                    <div class="picker">
-                        <select class="form-select" [(ngModel)]="newBlocked">
-                            <option value="">— pick a country —</option>
-                            <option *ngFor="let c of unpickedBlocked()" [value]="c.value">{{ c.flag }} {{ c.label }}</option>
-                        </select>
-                        <button class="btn btn-secondary btn-sm" (click)="addBlocked()" [disabled]="!newBlocked">+ Add</button>
+                    <div class="tabs">
+                        <button class="tab" [class.active]="tab === 'rules'" (click)="tab = 'rules'">Rules</button>
+                        <button class="tab" [class.active]="tab === 'message'" (click)="tab = 'message'">Block page</button>
+                        <button class="tab" [class.active]="tab === 'allowlist'" (click)="tab = 'allowlist'">IP allowlist</button>
+                        <button class="tab" [class.active]="tab === 'simulate'" (click)="tab = 'simulate'">Simulate</button>
+                        <button class="tab" [class.active]="tab === 'stats'" (click)="tab = 'stats'; loadStats()">Stats</button>
                     </div>
                 </div>
             </div>
         </vdr-page-block>
 
-        <vdr-page-block *ngIf="!loading && current && mode === 'specific' && isUkResolved()">
-            <div class="card">
-                <div class="card-block">
-                    <h3 class="step-title">5 · UK subdivisions <small>(only if 🇬🇧 is allowed)</small></h3>
-                    <p class="hint">Tighten the UK further. Leave all four ticked (or all unchecked) to allow the whole of the UK.</p>
-
-                    <div class="uk-row">
-                        <label *ngFor="let r of ukRegions" class="uk-pill" [class.active]="current.allowedGbRegions.includes(r.value)">
-                            <input type="checkbox"
-                                [checked]="current.allowedGbRegions.includes(r.value)"
-                                (change)="toggleUkRegion(r.value)">
-                            {{ r.label }}
-                        </label>
+        <!-- ============================================================= RULES TAB -->
+        <ng-container *ngIf="!loading && current && tab === 'rules'">
+            <vdr-page-block>
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Mode</h3>
+                        <div class="mode-grid">
+                            <label class="mode-card" [class.active]="current.mode === 'block'">
+                                <input type="radio" name="bmode" value="block" [(ngModel)]="current.mode" (ngModelChange)="markDirty()">
+                                <div class="mode-title">Full block</div>
+                                <div class="mode-body">Blocked visitors never see the storefront — they get the block page (or are redirected).</div>
+                            </label>
+                            <label class="mode-card" [class.active]="current.mode === 'soft'">
+                                <input type="radio" name="bmode" value="soft" [(ngModel)]="current.mode" (ngModelChange)="markDirty()">
+                                <div class="mode-title">Soft block (browse-only)</div>
+                                <div class="mode-body">Visitors can browse but a banner explains you don't ship to their country and checkout is hidden.</div>
+                            </label>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </vdr-page-block>
+            </vdr-page-block>
 
-        <vdr-page-block *ngIf="!loading && current">
-            <div class="card preview-card">
-                <div class="card-block">
-                    <h3 class="step-title">Resolved allow-list <small>(what will happen when you save)</small></h3>
-
-                    <div *ngIf="!current.enabled" class="preview-banner preview-off">
-                        <strong>Geo-block is OFF</strong> — everyone can visit. Nothing below applies.
+            <vdr-page-block>
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Strategy</h3>
+                        <div class="mode-grid">
+                            <label class="mode-card" [class.active]="strategy === 'specific'">
+                                <input type="radio" name="strat" value="specific" [(ngModel)]="strategy" (ngModelChange)="onStrategyChange()">
+                                <div class="mode-title">Allow only specific places</div>
+                                <div class="mode-body">Pick regions or individual countries — everyone else is blocked.</div>
+                            </label>
+                            <label class="mode-card" [class.active]="strategy === 'worldwide'">
+                                <input type="radio" name="strat" value="worldwide" [(ngModel)]="strategy" (ngModelChange)="onStrategyChange()">
+                                <div class="mode-title">Worldwide except blocked</div>
+                                <div class="mode-body">Allow everyone except the denylist below.</div>
+                            </label>
+                        </div>
                     </div>
+                </div>
+            </vdr-page-block>
 
-                    <div *ngIf="current.enabled">
-                        <div class="preview-banner preview-allow">
-                            <strong *ngIf="resolvedAllowed() === null">
-                                ✅ Allow visitors from anywhere
-                            </strong>
-                            <strong *ngIf="resolvedAllowed() !== null && resolvedAllowed()!.length">
-                                ✅ Allow visitors from {{ resolvedAllowed()!.length }} {{ resolvedAllowed()!.length === 1 ? 'country' : 'countries' }}
-                            </strong>
-                            <strong *ngIf="resolvedAllowed() !== null && !resolvedAllowed()!.length" class="warn">
-                                ⚠️ Nothing is allowed — every visitor will see the maintenance page.
-                            </strong>
+            <vdr-page-block *ngIf="strategy === 'specific'">
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Allowed regions <small>({{ pickedRegionCount() }} picked)</small></h3>
+                        <p class="hint">One-click presets. Tick as many as you want — they stack.</p>
 
-                            <div class="country-chips" *ngIf="resolvedAllowed() !== null && resolvedAllowed()!.length">
-                                <span class="mini-chip" *ngFor="let cc of resolvedAllowed()!">{{ flag(cc) }} {{ cc }}</span>
+                        <input class="form-input filter-input" placeholder="Filter presets…" [(ngModel)]="presetFilter">
+
+                        <div class="preset-section" *ngFor="let group of presetGroups">
+                            <h4 class="group-title">{{ group.label }}</h4>
+                            <div class="preset-grid">
+                                <label *ngFor="let p of filteredPresets(group.kind)" class="preset-card" [class.active]="isRegionPicked(p.key)">
+                                    <input type="checkbox" [checked]="isRegionPicked(p.key)" (change)="toggleRegion(p.key)">
+                                    <div class="preset-label">{{ p.label }}</div>
+                                    <div class="preset-hint">{{ p.description }}<span *ngIf="p.countryCount"> · {{ p.countryCount }} countries</span></div>
+                                </label>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </vdr-page-block>
 
-                        <div class="preview-banner preview-block" *ngIf="current.blockedCountries.length">
-                            <strong>🚫 Block {{ current.blockedCountries.length }} {{ current.blockedCountries.length === 1 ? 'country' : 'countries' }}</strong>
-                            <div class="country-chips">
-                                <span class="mini-chip blocked" *ngFor="let cc of current.blockedCountries">{{ flag(cc) }} {{ cc }}</span>
-                            </div>
+            <vdr-page-block *ngIf="strategy === 'specific'">
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Extra allowed countries <small>(optional)</small></h3>
+                        <p class="hint">Add countries that aren't covered by a preset above.</p>
+                        <div class="chip-row">
+                            <span class="chip" *ngFor="let cc of current.extraAllowed">
+                                {{ countryLabel(cc) }}
+                                <button class="chip-x" (click)="removeExtra(cc)" title="Remove">×</button>
+                            </span>
+                            <span *ngIf="!current.extraAllowed.length" class="hint inline">None yet.</span>
                         </div>
-
-                        <div class="preview-banner preview-uk" *ngIf="isUkResolved() && current.allowedGbRegions.length">
-                            <strong>🏴 Within the UK, allow only:</strong>
-                            <span class="mini-chip" *ngFor="let r of current.allowedGbRegions">{{ ukLabel(r) }}</span>
+                        <div class="picker">
+                            <input class="form-input" placeholder="Country code (e.g. JP, IL, BR)" [(ngModel)]="newExtra" (keyup.enter)="addExtra()" maxlength="2" style="text-transform: uppercase">
+                            <button class="btn btn-secondary btn-sm" (click)="addExtra()" [disabled]="!newExtra">+ Add</button>
                         </div>
                     </div>
                 </div>
-            </div>
-        </vdr-page-block>
+            </vdr-page-block>
 
-        <vdr-page-block *ngIf="!loading && current">
-            <div style="display:flex;gap:8px;align-items:center">
+            <vdr-page-block>
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Always-blocked countries</h3>
+                        <p class="hint" *ngIf="strategy === 'specific'">Subtracted from the allow-list — e.g. block 🇷🇺 while allowing &ldquo;Europe&rdquo;.</p>
+                        <p class="hint" *ngIf="strategy === 'worldwide'">In worldwide mode this is the <em>only</em> filter — everyone except these countries is allowed.</p>
+                        <div class="chip-row">
+                            <span class="chip blocked" *ngFor="let cc of current.blockedCountries">
+                                {{ countryLabel(cc) }}
+                                <button class="chip-x" (click)="removeBlocked(cc)" title="Remove">×</button>
+                            </span>
+                            <span *ngIf="!current.blockedCountries.length" class="hint inline">None yet.</span>
+                        </div>
+                        <div class="picker">
+                            <input class="form-input" placeholder="Country code (e.g. RU, IR)" [(ngModel)]="newBlocked" (keyup.enter)="addBlocked()" maxlength="2" style="text-transform: uppercase">
+                            <button class="btn btn-secondary btn-sm" (click)="addBlocked()" [disabled]="!newBlocked">+ Add</button>
+                            <span class="hint inline" style="margin-left: 12px">Common: RU, BY, IR, KP, SY, CU, MM</span>
+                        </div>
+                    </div>
+                </div>
+            </vdr-page-block>
+
+            <vdr-page-block *ngIf="isUkResolved()">
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">UK subdivisions <small>(only applies when GB is allowed)</small></h3>
+                        <p class="hint">Tighten to specific UK regions. Leave empty or pick all four to allow the whole UK.</p>
+                        <div class="uk-row">
+                            <label *ngFor="let r of ukRegions" class="uk-pill" [class.active]="current.allowedGbRegions.includes(r.value)">
+                                <input type="checkbox" [checked]="current.allowedGbRegions.includes(r.value)" (change)="toggleUkRegion(r.value)">
+                                {{ r.label }}
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </vdr-page-block>
+
+            <vdr-page-block>
+                <div class="card preview-card">
+                    <div class="card-block">
+                        <h3 class="step-title">Resolved allow-list</h3>
+                        <div *ngIf="!current.enabled" class="preview-banner preview-off">
+                            <strong>Geo-block is OFF</strong> — everyone can visit.
+                        </div>
+                        <div *ngIf="current.enabled">
+                            <div class="preview-banner preview-allow">
+                                <strong *ngIf="resolvedAllowed() === null">✅ Allow visitors from anywhere</strong>
+                                <strong *ngIf="resolvedAllowed() !== null && resolvedAllowed()!.length">
+                                    ✅ Allow visitors from {{ resolvedAllowed()!.length }} {{ resolvedAllowed()!.length === 1 ? 'country' : 'countries' }}
+                                </strong>
+                                <strong *ngIf="resolvedAllowed() !== null && !resolvedAllowed()!.length" class="warn">
+                                    ⚠️ Nothing is allowed — every visitor will be blocked.
+                                </strong>
+                                <div class="country-chips" *ngIf="resolvedAllowed() !== null && resolvedAllowed()!.length">
+                                    <span class="mini-chip" *ngFor="let cc of resolvedAllowed()!">{{ cc }}</span>
+                                </div>
+                            </div>
+                            <div class="preview-banner preview-block" *ngIf="current.blockedCountries.length">
+                                <strong>🚫 Always block</strong>
+                                <div class="country-chips">
+                                    <span class="mini-chip blocked" *ngFor="let cc of current.blockedCountries">{{ cc }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </vdr-page-block>
+        </ng-container>
+
+        <!-- ============================================================= BLOCK PAGE TAB -->
+        <ng-container *ngIf="!loading && current && tab === 'message'">
+            <vdr-page-block>
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Block page</h3>
+                        <p class="hint">Customise what blocked visitors see. Leave blank for sensible defaults.</p>
+
+                        <div class="form-row">
+                            <label>Custom message <small>(optional)</small></label>
+                            <textarea class="form-input" rows="4" [(ngModel)]="current.blockMessage" (ngModelChange)="markDirty()" placeholder="We're sorry — we don't ship to your country yet. Get in touch if you'd like to be notified when we expand."></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <label>Redirect URL <small>(optional)</small></label>
+                            <input class="form-input" [(ngModel)]="current.blockRedirectUrl" (ngModelChange)="markDirty()" placeholder="https://example.com/sorry">
+                            <p class="hint">When set, blocked visitors are redirected here instead of seeing the block page.</p>
+                        </div>
+
+                        <div class="form-row">
+                            <label>Logo URL <small>(optional)</small></label>
+                            <input class="form-input" [(ngModel)]="current.blockLogoUrl" (ngModelChange)="markDirty()" placeholder="https://example.com/logo.svg">
+                        </div>
+                    </div>
+                </div>
+            </vdr-page-block>
+        </ng-container>
+
+        <!-- ============================================================= IP ALLOWLIST TAB -->
+        <ng-container *ngIf="!loading && current && tab === 'allowlist'">
+            <vdr-page-block>
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">IP allowlist <small>(overrides every rule)</small></h3>
+                        <p class="hint">IPs or IPv4 CIDR ranges that bypass all country / region rules. Use for your office, oncall engineers, payment processor probes.</p>
+                        <div class="chip-row">
+                            <span class="chip mono" *ngFor="let ip of current.ipAllowlist">
+                                {{ ip }}
+                                <button class="chip-x" (click)="removeIp(ip)" title="Remove">×</button>
+                            </span>
+                            <span *ngIf="!current.ipAllowlist.length" class="hint inline">No bypass IPs configured.</span>
+                        </div>
+                        <div class="picker">
+                            <input class="form-input mono" placeholder="203.0.113.42 or 203.0.113.0/24" [(ngModel)]="newIp" (keyup.enter)="addIp()" style="min-width: 260px">
+                            <button class="btn btn-secondary btn-sm" (click)="addIp()" [disabled]="!newIp">+ Add</button>
+                        </div>
+                    </div>
+                </div>
+            </vdr-page-block>
+        </ng-container>
+
+        <!-- ============================================================= SIMULATE TAB -->
+        <ng-container *ngIf="!loading && current && tab === 'simulate'">
+            <vdr-page-block>
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Simulate a visitor</h3>
+                        <p class="hint">Test exactly what your current rules will do for a hypothetical visitor — without saving anything to the storefront.</p>
+                        <div class="sim-grid">
+                            <div>
+                                <label>Country code</label>
+                                <input class="form-input" [(ngModel)]="sim.country" placeholder="US" maxlength="2" style="text-transform: uppercase">
+                            </div>
+                            <div>
+                                <label>UK region <small>(optional)</small></label>
+                                <input class="form-input" [(ngModel)]="sim.region" placeholder="ENG / WLS / SCT / NIR" maxlength="3" style="text-transform: uppercase">
+                            </div>
+                            <div>
+                                <label>IP address <small>(optional)</small></label>
+                                <input class="form-input" [(ngModel)]="sim.ip" placeholder="203.0.113.42">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" (click)="runSim()" [disabled]="simBusy">
+                            {{ simBusy ? 'Running…' : 'Run simulation' }}
+                        </button>
+
+                        <div class="sim-result" *ngIf="simResult">
+                            <div *ngIf="simResult.ipMatchesAllowlist" class="sim-banner allow">
+                                <strong>✅ Allowed</strong> — IP matches the allowlist, every other rule is bypassed.
+                            </div>
+                            <div *ngIf="!simResult.ipMatchesAllowlist && simResult.verdict.allowed" class="sim-banner allow">
+                                <strong>✅ Allowed</strong> ({{ simResult.verdict.reason }})
+                            </div>
+                            <div *ngIf="!simResult.ipMatchesAllowlist && !simResult.verdict.allowed" class="sim-banner deny">
+                                <strong>🚫 Blocked</strong> ({{ simResult.verdict.reason }})
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </vdr-page-block>
+        </ng-container>
+
+        <!-- ============================================================= STATS TAB -->
+        <ng-container *ngIf="!loading && current && tab === 'stats'">
+            <vdr-page-block>
+                <div class="card">
+                    <div class="card-block">
+                        <h3 class="step-title">Block statistics <small>last {{ statsDays }} days</small></h3>
+
+                        <div *ngIf="!stats" class="hint">Loading…</div>
+                        <div *ngIf="stats">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="num">{{ stats.totals.blocked || 0 }}</div>
+                                    <div class="lbl">Full blocks</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="num">{{ stats.totals.softBlocked || 0 }}</div>
+                                    <div class="lbl">Soft blocks</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="num">{{ stats.totals.total || 0 }}</div>
+                                    <div class="lbl">Total events</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="num">{{ stats.totals.uniqueIps || 0 }}</div>
+                                    <div class="lbl">Unique IPs</div>
+                                </div>
+                            </div>
+
+                            <h4 style="margin-top: 24px">Top blocked countries</h4>
+                            <table class="table table-compact" *ngIf="stats.topCountries?.length">
+                                <thead><tr><th>Country</th><th style="width: 100px">Blocked</th></tr></thead>
+                                <tbody>
+                                    <tr *ngFor="let r of stats.topCountries">
+                                        <td>{{ r.country || '—' }}</td>
+                                        <td>{{ r.n }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p *ngIf="!stats.topCountries?.length" class="hint">No blocks recorded yet.</p>
+
+                            <h4 style="margin-top: 24px">By reason</h4>
+                            <table class="table table-compact" *ngIf="stats.reasons?.length">
+                                <thead><tr><th>Reason</th><th style="width: 100px">Count</th></tr></thead>
+                                <tbody>
+                                    <tr *ngFor="let r of stats.reasons">
+                                        <td>{{ r.reason }}</td>
+                                        <td>{{ r.n }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </vdr-page-block>
+        </ng-container>
+
+        <!-- ============================================================= SAVE BAR -->
+        <vdr-page-block *ngIf="!loading && current && tab !== 'simulate' && tab !== 'stats'">
+            <div class="save-bar">
                 <button class="btn btn-primary" (click)="save()" [disabled]="saving">
                     {{ saving ? 'Saving…' : 'Save changes' }}
                 </button>
@@ -220,26 +387,55 @@ interface CountryDef { value: string; label: string; flag: string; }
     `,
     styles: [`
         :host { color: var(--color-text-100, inherit); display: block; }
+        .subtitle { font-size: 13px; color: var(--color-component-color-300); margin: 2px 0 0; }
+
+        .top-bar { border-top: 3px solid var(--color-primary-500, #1d4ed8); }
         .chan-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-        .chan-row .lbl { font-size: 12px; color: var(--color-component-color-300); }
-        .form-select {
-            padding: 6px 10px; border-radius: 4px; min-width: 200px;
+        .lbl { font-size: 12px; color: var(--color-component-color-300); }
+        .form-select, .form-input {
+            padding: 6px 10px; border-radius: 4px; min-width: 180px;
             border: 1px solid var(--color-component-border-200);
             background: var(--color-component-bg-100);
             color: var(--color-text-100, inherit);
         }
+        .form-input.mono { font-family: var(--clr-font-family-monospace, monospace); }
+        .filter-input { width: 100%; max-width: 360px; margin-bottom: 12px; }
+        textarea.form-input { font-family: inherit; min-height: 80px; width: 100%; max-width: 600px; }
+        .form-row { margin: 12px 0; }
+        .form-row label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+        .form-row label small { color: var(--color-component-color-300); font-weight: 400; margin-left: 4px; }
+
         .status-pill {
             display: inline-block; padding: 3px 12px; border-radius: 12px;
             font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
         }
         .status-pill.on { background: #10b981; color: #fff; }
         .status-pill.off { background: var(--color-component-bg-200); color: var(--color-component-color-300); }
+        .mode-pill {
+            display: inline-block; padding: 3px 10px; border-radius: 10px;
+            font-size: 11px; font-weight: 600;
+        }
+        .mode-pill.mode-block { background: #fee2e2; color: #991b1b; }
+        .mode-pill.mode-soft { background: #fef3c7; color: #92400e; }
+        .dirty-flag { color: #f59e0b; font-weight: 600; font-size: 12px; }
+
+        .tabs { display: flex; gap: 4px; margin-top: 16px; border-bottom: 1px solid var(--color-component-border-200); }
+        .tab {
+            padding: 8px 16px;
+            background: transparent; border: 0; border-bottom: 2px solid transparent;
+            font-size: 13px; font-weight: 500;
+            color: var(--color-component-color-300); cursor: pointer;
+            margin-bottom: -1px;
+        }
+        .tab:hover { color: var(--color-text-100); }
+        .tab.active { border-bottom-color: var(--color-primary-500, #1d4ed8); color: var(--color-text-100); font-weight: 600; }
 
         .hint { font-size: 13px; color: var(--color-component-color-300); margin: 6px 0 12px; }
         .hint.inline { display: inline; margin: 0; }
 
         .step-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-        .step-title small { color: var(--color-component-color-300); font-weight: 400; }
+        .step-title small { color: var(--color-component-color-300); font-weight: 400; margin-left: 6px; }
+        .group-title { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-component-color-300); margin: 14px 0 8px; }
 
         .mode-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
         .mode-card {
@@ -254,6 +450,7 @@ interface CountryDef { value: string; label: string; flag: string; }
         .mode-card .mode-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
         .mode-card .mode-body { font-size: 12px; color: var(--color-component-color-300); line-height: 1.5; }
 
+        .preset-section { margin-top: 8px; }
         .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
         .preset-card {
             display: block; padding: 12px;
@@ -264,7 +461,7 @@ interface CountryDef { value: string; label: string; flag: string; }
         .preset-card.active { border-color: var(--color-primary-500, #1d4ed8); background: var(--color-component-bg-200); }
         .preset-card input { float: right; }
         .preset-label { font-weight: 600; font-size: 13px; }
-        .preset-hint { font-size: 11px; color: var(--color-component-color-300); margin-top: 4px; }
+        .preset-hint { font-size: 11px; color: var(--color-component-color-300); margin-top: 4px; line-height: 1.4; }
 
         .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; min-height: 30px; }
         .chip {
@@ -274,6 +471,7 @@ interface CountryDef { value: string; label: string; flag: string; }
             border: 1px solid #93c5fd;
         }
         .chip.blocked { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+        .chip.mono { font-family: var(--clr-font-family-monospace, monospace); background: var(--color-component-bg-200); color: var(--color-text-100); border-color: var(--color-component-border-200); }
         .chip-x {
             background: transparent; border: none; cursor: pointer; padding: 0 0 0 2px;
             color: inherit; font-size: 16px; line-height: 1;
@@ -304,6 +502,24 @@ interface CountryDef { value: string; label: string; flag: string; }
             font-family: var(--clr-font-family-monospace, monospace);
         }
         .mini-chip.blocked { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+
+        .sim-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0 16px; max-width: 700px; }
+        .sim-result { margin-top: 16px; }
+        .sim-banner { padding: 12px 16px; border-radius: 6px; font-size: 14px; }
+        .sim-banner.allow { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+        .sim-banner.deny { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+        .stat-card {
+            padding: 14px 18px;
+            border: 1px solid var(--color-component-border-200);
+            border-radius: 6px;
+            background: var(--color-component-bg-100);
+        }
+        .stat-card .num { font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--color-primary-500, #1d4ed8); }
+        .stat-card .lbl { font-size: 11px; color: var(--color-component-color-300); margin-top: 2px; }
+
+        .save-bar { display: flex; gap: 8px; align-items: center; padding: 12px; background: var(--color-component-bg-100); border: 1px solid var(--color-component-border-200); border-radius: 6px; }
     `],
 })
 export class GeoBlockComponent implements OnInit {
@@ -312,61 +528,30 @@ export class GeoBlockComponent implements OnInit {
     channels: ChannelRow[] = [];
     currentToken = '';
     current: ChannelRow | null = null;
-    /** UI mode derived from underlying fields. */
-    mode: 'specific' | 'worldwide' = 'specific';
     dirty = false;
+
+    tab: 'rules' | 'message' | 'allowlist' | 'simulate' | 'stats' = 'rules';
+    strategy: 'specific' | 'worldwide' = 'specific';
+    presetFilter = '';
+
     newExtra = '';
     newBlocked = '';
+    newIp = '';
 
-    /** Canonical region definitions — must match values in the channel
-     *  customField options so existing rows round-trip cleanly. */
-    regionDefs: RegionDef[] = [
-        { value: 'UK_ONLY',       label: '🇬🇧 United Kingdom only',         hint: 'Just GB.',                                       countries: 1 },
-        { value: 'BRITISH_ISLES', label: '🏴 British Isles',                hint: 'UK, Ireland, Isle of Man, Channel Islands, Faroes.', countries: 6 },
-        { value: 'EU',            label: '🇪🇺 European Union (27)',          hint: 'All current EU member states.',                  countries: 27 },
-        { value: 'EEA',           label: '🇪🇺 EEA',                          hint: 'EU + Iceland, Liechtenstein, Norway.',           countries: 30 },
-        { value: 'EUROPE',        label: '🌍 All of Europe',                hint: 'Whole continent incl. UK, RU, UA, micro-states.', countries: 51 },
-        { value: 'NORTH_AMERICA', label: '🌎 North America',                hint: 'US, Canada, Mexico.',                            countries: 3 },
-        { value: 'OCEANIA',       label: '🌏 Oceania',                      hint: 'Australia, New Zealand.',                        countries: 2 },
-    ];
+    sim = { country: '', region: '', ip: '' };
+    simBusy = false;
+    simResult: any = null;
 
-    /** Curated country list — matches the dropdown options on the
-     *  channel customField, plus a few common extras. */
-    countryDefs: CountryDef[] = [
-        { value: 'GB', label: 'United Kingdom', flag: '🇬🇧' },
-        { value: 'IE', label: 'Ireland',        flag: '🇮🇪' },
-        { value: 'FR', label: 'France',         flag: '🇫🇷' },
-        { value: 'DE', label: 'Germany',        flag: '🇩🇪' },
-        { value: 'NL', label: 'Netherlands',    flag: '🇳🇱' },
-        { value: 'BE', label: 'Belgium',        flag: '🇧🇪' },
-        { value: 'LU', label: 'Luxembourg',     flag: '🇱🇺' },
-        { value: 'ES', label: 'Spain',          flag: '🇪🇸' },
-        { value: 'PT', label: 'Portugal',       flag: '🇵🇹' },
-        { value: 'IT', label: 'Italy',          flag: '🇮🇹' },
-        { value: 'AT', label: 'Austria',        flag: '🇦🇹' },
-        { value: 'CH', label: 'Switzerland',    flag: '🇨🇭' },
-        { value: 'DK', label: 'Denmark',        flag: '🇩🇰' },
-        { value: 'SE', label: 'Sweden',         flag: '🇸🇪' },
-        { value: 'NO', label: 'Norway',         flag: '🇳🇴' },
-        { value: 'FI', label: 'Finland',        flag: '🇫🇮' },
-        { value: 'IS', label: 'Iceland',        flag: '🇮🇸' },
-        { value: 'PL', label: 'Poland',         flag: '🇵🇱' },
-        { value: 'CZ', label: 'Czechia',        flag: '🇨🇿' },
-        { value: 'US', label: 'United States',  flag: '🇺🇸' },
-        { value: 'CA', label: 'Canada',         flag: '🇨🇦' },
-        { value: 'AU', label: 'Australia',      flag: '🇦🇺' },
-        { value: 'NZ', label: 'New Zealand',    flag: '🇳🇿' },
-        { value: 'JP', label: 'Japan',          flag: '🇯🇵' },
-        { value: 'IL', label: 'Israel',         flag: '🇮🇱' },
-        // Sanction-list defaults — useful in the block picker.
-        { value: 'RU', label: 'Russia',         flag: '🇷🇺' },
-        { value: 'BY', label: 'Belarus',        flag: '🇧🇾' },
-        { value: 'UA', label: 'Ukraine',        flag: '🇺🇦' },
-        { value: 'IR', label: 'Iran',           flag: '🇮🇷' },
-        { value: 'KP', label: 'North Korea',    flag: '🇰🇵' },
-        { value: 'SY', label: 'Syria',          flag: '🇸🇾' },
-        { value: 'CU', label: 'Cuba',           flag: '🇨🇺' },
-        { value: 'CN', label: 'China',          flag: '🇨🇳' },
+    stats: any = null;
+    statsDays = 30;
+
+    presets: PresetMeta[] = [];
+    presetGroups = [
+        { kind: 'all',        label: 'Everywhere' },
+        { kind: 'geography',  label: 'By geography' },
+        { kind: 'trade',      label: 'Trade blocs' },
+        { kind: 'political',  label: 'Political / economic groups' },
+        { kind: 'language',   label: 'Language / cultural' },
     ];
 
     ukRegions = [
@@ -382,19 +567,32 @@ export class GeoBlockComponent implements OnInit {
         private cdr: ChangeDetectorRef,
     ) {}
 
-    ngOnInit() { this.reload(); }
+    ngOnInit() {
+        this.http.get<{ presets: PresetMeta[] }>('/geo-block/presets').subscribe({
+            next: r => { this.presets = r.presets || []; this.cdr.markForCheck(); },
+            error: () => { /* presets are nice-to-have, not required */ },
+        });
+        this.reload();
+    }
 
     reload() {
         this.loading = true;
         this.dirty = false;
-        this.http.get<{ channels: ChannelRow[] }>('/ees/geo-block/admin/channels').subscribe({
+        this.http.get<{ channels: ChannelRow[] }>('/geo-block/admin/channels').subscribe({
             next: (res) => {
-                this.channels = res.channels || [];
+                this.channels = (res.channels || []).map(c => ({
+                    ...c,
+                    mode: c.mode || 'block',
+                    ipAllowlist: c.ipAllowlist || [],
+                    blockMessage: c.blockMessage || '',
+                    blockRedirectUrl: c.blockRedirectUrl || '',
+                    blockLogoUrl: c.blockLogoUrl || '',
+                }));
                 if (!this.currentToken && this.channels.length) {
                     this.currentToken = this.channels[0].token;
                 }
                 this.current = this.channels.find(c => c.token === this.currentToken) || null;
-                this.deriveMode();
+                this.deriveStrategy();
                 this.loading = false;
                 this.cdr.markForCheck();
             },
@@ -408,24 +606,24 @@ export class GeoBlockComponent implements OnInit {
     onChannelChange() {
         this.current = this.channels.find(c => c.token === this.currentToken) || null;
         this.dirty = false;
-        this.deriveMode();
+        this.deriveStrategy();
+        this.stats = null;
+        this.simResult = null;
     }
 
-    private deriveMode() {
+    private deriveStrategy() {
         if (!this.current) return;
-        this.mode = this.current.allowedRegions.includes('WORLDWIDE') ? 'worldwide' : 'specific';
+        this.strategy = this.current.allowedRegions.includes('WORLDWIDE') ? 'worldwide' : 'specific';
     }
 
-    onModeChange() {
+    onStrategyChange() {
         if (!this.current) return;
-        if (this.mode === 'worldwide') {
-            // Replace presets with just WORLDWIDE (the resolver short-circuits).
+        if (this.strategy === 'worldwide') {
             this.current.allowedRegions = ['WORLDWIDE'];
             this.current.extraAllowed = [];
         } else {
             this.current.allowedRegions = this.current.allowedRegions.filter(r => r !== 'WORLDWIDE');
             if (!this.current.allowedRegions.length && !this.current.extraAllowed.length) {
-                // Sensible default when switching back.
                 this.current.allowedRegions = ['UK_ONLY'];
             }
         }
@@ -452,17 +650,22 @@ export class GeoBlockComponent implements OnInit {
         this.markDirty();
     }
 
-    unpickedExtras(): CountryDef[] {
-        return this.countryDefs.filter(c => !this.current?.extraAllowed.includes(c.value));
+    pickedRegionCount(): number {
+        return this.current?.allowedRegions.length || 0;
     }
-    unpickedBlocked(): CountryDef[] {
-        return this.countryDefs.filter(c => !this.current?.blockedCountries.includes(c.value));
+
+    filteredPresets(kind: string): PresetMeta[] {
+        const filter = this.presetFilter.trim().toLowerCase();
+        return this.presets
+            .filter(p => p.kind === kind)
+            .filter(p => !filter || p.label.toLowerCase().includes(filter) || p.description.toLowerCase().includes(filter));
     }
 
     addExtra() {
         if (!this.current || !this.newExtra) return;
-        if (!this.current.extraAllowed.includes(this.newExtra)) {
-            this.current.extraAllowed = [...this.current.extraAllowed, this.newExtra];
+        const cc = this.newExtra.trim().toUpperCase();
+        if (cc.length === 2 && !this.current.extraAllowed.includes(cc)) {
+            this.current.extraAllowed = [...this.current.extraAllowed, cc];
             this.markDirty();
         }
         this.newExtra = '';
@@ -475,8 +678,9 @@ export class GeoBlockComponent implements OnInit {
 
     addBlocked() {
         if (!this.current || !this.newBlocked) return;
-        if (!this.current.blockedCountries.includes(this.newBlocked)) {
-            this.current.blockedCountries = [...this.current.blockedCountries, this.newBlocked];
+        const cc = this.newBlocked.trim().toUpperCase();
+        if (cc.length === 2 && !this.current.blockedCountries.includes(cc)) {
+            this.current.blockedCountries = [...this.current.blockedCountries, cc];
             this.markDirty();
         }
         this.newBlocked = '';
@@ -484,6 +688,21 @@ export class GeoBlockComponent implements OnInit {
     removeBlocked(cc: string) {
         if (!this.current) return;
         this.current.blockedCountries = this.current.blockedCountries.filter(c => c !== cc);
+        this.markDirty();
+    }
+
+    addIp() {
+        if (!this.current || !this.newIp) return;
+        const ip = this.newIp.trim();
+        if (ip && !this.current.ipAllowlist.includes(ip)) {
+            this.current.ipAllowlist = [...this.current.ipAllowlist, ip];
+            this.markDirty();
+        }
+        this.newIp = '';
+    }
+    removeIp(ip: string) {
+        if (!this.current) return;
+        this.current.ipAllowlist = this.current.ipAllowlist.filter(i => i !== ip);
         this.markDirty();
     }
 
@@ -502,34 +721,17 @@ export class GeoBlockComponent implements OnInit {
         return allowed === null || allowed.includes('GB');
     }
 
-    flag(cc: string): string {
-        return this.countryDefs.find(c => c.value === cc)?.flag || cc;
-    }
-    countryLabel(cc: string): string {
-        return this.countryDefs.find(c => c.value === cc)?.label || cc;
-    }
-    ukLabel(r: string): string {
-        return this.ukRegions.find(u => u.value === r)?.label || r;
-    }
+    countryLabel(cc: string): string { return cc; }
 
-    /** Re-compute the resolved allow-list locally so the preview matches
-     *  exactly what the backend resolver will produce on save. */
+    /** Local preview — uses the server-resolved allowed list when no
+     *  rule changes are pending. Best-effort otherwise. */
     resolvedAllowed(): string[] | null {
         if (!this.current) return [];
-        const regions = this.current.allowedRegions.map(r => r.toUpperCase());
-        if (regions.includes('WORLDWIDE')) return null;
-        const RM = REGION_TO_COUNTRIES;
-        const set = new Set<string>();
-        for (const r of regions) {
-            const cs = RM[r as keyof typeof RM];
-            if (cs) for (const c of cs) set.add(c);
-        }
-        for (const c of this.current.extraAllowed) set.add(c.toUpperCase());
-        for (const c of this.current.blockedCountries) set.delete(c.toUpperCase());
-        return Array.from(set).sort();
+        if (this.current.allowedRegions.includes('WORLDWIDE')) return null;
+        return this.current.resolved?.allowedCountries ?? null;
     }
 
-    private markDirty() { this.dirty = true; }
+    markDirty() { this.dirty = true; }
 
     save() {
         if (!this.current) return;
@@ -537,16 +739,22 @@ export class GeoBlockComponent implements OnInit {
         const body = {
             token: this.current.token,
             enabled: this.current.enabled,
+            mode: this.current.mode,
             allowedRegions: this.current.allowedRegions,
             extraAllowed: this.current.extraAllowed,
             blockedCountries: this.current.blockedCountries,
             allowedGbRegions: this.current.allowedGbRegions,
+            ipAllowlist: this.current.ipAllowlist,
+            blockMessage: this.current.blockMessage,
+            blockRedirectUrl: this.current.blockRedirectUrl,
+            blockLogoUrl: this.current.blockLogoUrl,
         };
-        this.http.post<any>('/ees/geo-block/admin/save', body).subscribe({
+        this.http.post<any>('/geo-block/admin/save', body).subscribe({
             next: () => {
                 this.saving = false;
                 this.dirty = false;
-                this.notify.success('Geo-block settings saved');
+                this.notify.success('Site access settings saved');
+                this.reload();
             },
             error: (err) => {
                 this.saving = false;
@@ -554,20 +762,28 @@ export class GeoBlockComponent implements OnInit {
             },
         });
     }
-}
 
-// Mirrors src/plugins/ees/geo-regions.ts so the live preview matches the
-// backend resolver exactly. Kept in-file to avoid an admin-UI import of
-// backend code.
-const EU_27 = ['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE'];
-const EEA_EXTRA = ['IS','LI','NO'];
-const NON_EU_EUROPE = ['GB','CH','NO','IS','LI','AL','AD','BA','BY','FO','GI','IM','JE','GG','MC','ME','MD','MK','RS','SM','UA','VA','XK','RU'];
-const REGION_TO_COUNTRIES: Record<string, string[]> = {
-    EUROPE: Array.from(new Set([...EU_27, ...NON_EU_EUROPE])),
-    EU: EU_27,
-    EEA: Array.from(new Set([...EU_27, ...EEA_EXTRA])),
-    BRITISH_ISLES: ['GB','IE','IM','JE','GG','FO'],
-    UK_ONLY: ['GB'],
-    NORTH_AMERICA: ['US','CA','MX'],
-    OCEANIA: ['AU','NZ'],
-};
+    runSim() {
+        if (!this.current) return;
+        this.simBusy = true;
+        this.simResult = null;
+        this.http.post<any>('/geo-block/admin/simulate', {
+            token: this.current.token,
+            country: this.sim.country.trim().toUpperCase() || null,
+            region: this.sim.region.trim().toUpperCase() || null,
+            ip: this.sim.ip.trim() || null,
+        }).subscribe({
+            next: r => { this.simResult = r; this.simBusy = false; this.cdr.markForCheck(); },
+            error: () => { this.simBusy = false; this.notify.error('Simulation failed'); },
+        });
+    }
+
+    loadStats() {
+        if (!this.current) return;
+        if (this.stats) return; // load once on first visit
+        this.http.get<any>(`/geo-block/admin/stats?days=${this.statsDays}&channelId=${this.current.id}`).subscribe({
+            next: s => { this.stats = s; this.cdr.markForCheck(); },
+            error: () => this.notify.error('Failed to load stats'),
+        });
+    }
+}

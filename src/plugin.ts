@@ -1,14 +1,29 @@
 import { LanguageCode, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
-import { RevocationChecker, verifyLicence } from '@hulo/vendure-licence-sdk';
+import { RevocationChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
+import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
+import { REGION_PRESETS } from './geo-regions';
+
+export interface MaintenanceWindow {
+    /** ISO-8601 timestamp. */
+    startsAt: string;
+    endsAt: string;
+    /** Optional IPs that bypass maintenance (office, oncall, etc.). */
+    allowedIps?: string[];
+}
 
 export interface GeoBlockPluginOptions {
-    /** Public-facing host of the Vendure server. Used in licence
-     *  domain matching — must match one of the JWT's `allowedDomains`. */
+    /** Public-facing host of the Vendure server. Used in licence domain
+     *  matching — must match one of the JWT's `allowedDomains`. */
     publicBaseUrl: string;
-    /** JWT licence key. Without it, the public site-config endpoint
-     *  still resolves the rules but always returns `enabled: false`. */
+    /** JWT licence key. Without it, the public site-config endpoint still
+     *  resolves the rules but always returns `enabled: false`. */
     licenceKey?: string;
+    /** Optional scheduled-maintenance window. When the current time falls
+     *  inside this window the `/geo-block/check` endpoint refuses every
+     *  request (except IPs on the per-channel allowlist or this option's
+     *  own `allowedIps`). */
+    maintenanceWindow?: MaintenanceWindow;
 }
 
 const HULO_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -29,72 +44,89 @@ let cachedOptions: GeoBlockPluginOptions = { publicBaseUrl: 'http://localhost:30
 export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
 
 /**
- * `@hulo/vendure-plugin-geo-block`
+ * `@huloglobal/vendure-plugin-geo-block`
  *
- * Per-channel geo-restriction for Vendure storefronts. The plugin owns
- * a flat `/geo-block/site-config` endpoint the storefront polls (cached
- * client-side) plus an admin page for configuring region presets,
- * extra allowed countries, denylist, and UK-region subfilter.
- *
- * Add to your Vendure config:
- *
- * ```ts
- * import { GeoBlockPlugin } from '@hulo/vendure-plugin-geo-block';
- *
- * export const config: VendureConfig = {
- *   plugins: [
- *     GeoBlockPlugin.init({
- *       publicBaseUrl: 'https://shop.example.com',
- *       licenceKey: process.env.HULO_LICENCE_KEY,
- *     }),
- *   ],
- * };
- * ```
+ * Per-channel geo-restriction for Vendure storefronts. Owns three
+ * public endpoints (`/geo-block/site-config`, `/geo-block/check`,
+ * `/geo-block/presets`), six admin endpoints, and a custom-fields-only
+ * Channel extension that surfaces all rules in the standard Vendure
+ * admin Channel form — so even without the dedicated UI you can manage
+ * blocks from the channel settings.
  */
 @VendurePlugin({
     imports: [PluginCommonModule],
     controllers: [GeoBlockController],
+    entities: [GeoBlockEvent],
     compatibility: '^3.0.0',
     configuration: config => {
+        // Convert REGION_PRESETS into Vendure customField option entries
+        // so the admin gets the same human-readable picker the dedicated
+        // UI shows.
+        const presetOptions = REGION_PRESETS.map(p => ({
+            value: p.key,
+            label: [{ languageCode: LanguageCode.en, value: p.label }],
+        }));
+
         config.customFields.Channel = (config.customFields.Channel || []).concat([
             {
                 name: 'geoBlockEnabled', type: 'boolean', public: true, defaultValue: false,
-                label: [{ languageCode: LanguageCode.en, value: 'Site: Geo-block enabled' }],
-                description: [{ languageCode: LanguageCode.en, value: 'When on, visitors outside the allowed countries (and UK regions, if GB is allowed) see a "down for maintenance" page instead of the storefront.' }],
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: enabled' }],
+                description: [{ languageCode: LanguageCode.en, value: 'When on, visitors outside the resolved allow-list see a block page (or banner, in soft mode).' }],
+            },
+            {
+                name: 'geoBlockMode', type: 'string', public: true, defaultValue: 'block',
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: mode' }],
+                description: [{ languageCode: LanguageCode.en, value: 'block = full page block; soft = render storefront with a "we don\'t ship here" banner so the visitor can still browse / contact you.' }],
+                options: [
+                    { value: 'block', label: [{ languageCode: LanguageCode.en, value: 'Full block (hide storefront)' }] },
+                    { value: 'soft', label: [{ languageCode: LanguageCode.en, value: 'Soft block (banner + browse-only)' }] },
+                ],
             },
             {
                 name: 'geoBlockAllowedRegions', type: 'string', list: true, public: true,
                 defaultValue: [],
-                label: [{ languageCode: LanguageCode.en, value: 'Site: Geo-block allowed regions (presets)' }],
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: allowed regions (presets)' }],
                 description: [{ languageCode: LanguageCode.en, value: 'One-click region presets. Combine with extra/blocked countries below.' }],
-                options: [
-                    { value: 'UK_ONLY', label: [{ languageCode: LanguageCode.en, value: 'United Kingdom only' }] },
-                    { value: 'BRITISH_ISLES', label: [{ languageCode: LanguageCode.en, value: 'British Isles (GB, IE, IoM, CI, Faroes)' }] },
-                    { value: 'EU', label: [{ languageCode: LanguageCode.en, value: 'European Union (27)' }] },
-                    { value: 'EEA', label: [{ languageCode: LanguageCode.en, value: 'EEA (EU + IS, LI, NO)' }] },
-                    { value: 'EUROPE', label: [{ languageCode: LanguageCode.en, value: 'Whole Europe (incl. UK, RU, UA, micro-states)' }] },
-                    { value: 'NORTH_AMERICA', label: [{ languageCode: LanguageCode.en, value: 'North America (US, CA, MX)' }] },
-                    { value: 'OCEANIA', label: [{ languageCode: LanguageCode.en, value: 'Oceania (AU, NZ)' }] },
-                    { value: 'WORLDWIDE', label: [{ languageCode: LanguageCode.en, value: 'Worldwide — only blocked countries excluded' }] },
-                ],
+                options: presetOptions,
             },
             {
                 name: 'geoBlockAllowedCountries', type: 'string', list: true, public: true,
                 defaultValue: [],
-                label: [{ languageCode: LanguageCode.en, value: 'Site: Extra allowed countries (ISO 3166-1 alpha-2)' }],
-                description: [{ languageCode: LanguageCode.en, value: 'Countries allowed on top of the selected regions. Use ISO codes (GB, IE, FR, US…).' }],
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: extra allowed countries' }],
+                description: [{ languageCode: LanguageCode.en, value: 'ISO 3166-1 alpha-2 codes (GB, IE, FR, US…). Added on top of the regions above.' }],
             },
             {
                 name: 'geoBlockBlockedCountries', type: 'string', list: true, public: true,
                 defaultValue: [],
-                label: [{ languageCode: LanguageCode.en, value: 'Site: Always-blocked countries' }],
-                description: [{ languageCode: LanguageCode.en, value: 'Subtracted from the resolved allow-list. Useful for blocking specific countries inside a region you otherwise allow.' }],
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: always-blocked countries' }],
+                description: [{ languageCode: LanguageCode.en, value: 'Subtracted from the resolved allow-list. Useful to ship "EU except X".' }],
             },
             {
                 name: 'geoBlockAllowedGbRegions', type: 'string', list: true, public: true,
                 defaultValue: [],
-                label: [{ languageCode: LanguageCode.en, value: 'Site: Geo-block allowed UK regions' }],
-                description: [{ languageCode: LanguageCode.en, value: 'When GB is resolved as allowed, additionally restrict to ENG / WLS / SCT / NIR. Empty = whole UK allowed.' }],
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: allowed UK regions' }],
+                description: [{ languageCode: LanguageCode.en, value: 'When GB is allowed, optionally restrict to ENG / WLS / SCT / NIR. Empty = whole UK.' }],
+            },
+            {
+                name: 'geoBlockIpAllowlist', type: 'string', list: true, public: false,
+                defaultValue: [],
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: IP allowlist (overrides all rules)' }],
+                description: [{ languageCode: LanguageCode.en, value: 'IPs or IPv4 CIDR ranges (e.g. 203.0.113.0/24) that bypass every country / region rule. Add your office, oncall, payment-processor probes.' }],
+            },
+            {
+                name: 'geoBlockBlockMessage', type: 'text', public: true, nullable: true,
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: block-page message' }],
+                description: [{ languageCode: LanguageCode.en, value: 'Custom message shown on the block / soft-block page. Empty = sensible default per reason.' }],
+            },
+            {
+                name: 'geoBlockBlockRedirectUrl', type: 'string', public: true, nullable: true,
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: redirect URL' }],
+                description: [{ languageCode: LanguageCode.en, value: 'Optional. When set, the storefront redirects blocked visitors here instead of showing the block page.' }],
+            },
+            {
+                name: 'geoBlockBlockLogoUrl', type: 'string', public: true, nullable: true,
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: logo URL' }],
+                description: [{ languageCode: LanguageCode.en, value: 'Optional logo shown above the block message.' }],
             },
         ]);
         return config;
@@ -124,7 +156,7 @@ export class GeoBlockPlugin {
         if (!status.valid) {
             // eslint-disable-next-line no-console
             console.warn(
-                `[@hulo/vendure-plugin-geo-block] ${status.message}` +
+                `[@huloglobal/vendure-plugin-geo-block] ${status.message}` +
                 ` — Running in unlicensed mode (settings still saveable, but the public endpoint always reports enabled=false). Purchase a key at https://elite-software.co.uk/licence/buy/${PLUGIN_ID}`,
             );
         }

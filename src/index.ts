@@ -1,11 +1,19 @@
 /**
- * `@hulo/vendure-plugin-geo-block` — public exports.
+ * `@huloglobal/vendure-plugin-geo-block` — public exports.
  *
- * `GeoBlockPlugin` registers the per-channel custom fields, controllers
- * and admin UI. `resolveAllowedCountries` is also re-exported so
- * downstream plugins / scripts can compute the resolved country
- * allow-list outside the HTTP path.
+ * `GeoBlockPlugin` registers the per-channel custom fields, controllers,
+ * GeoBlockEvent audit entity and admin UI. The presets + helpers below
+ * are exported so downstream plugins / scripts can compute the resolved
+ * country allow-list and run "what-if" checks outside the HTTP path.
  */
 
-export { GeoBlockPlugin, GeoBlockPluginOptions } from './plugin';
-export { resolveAllowedCountries, GeoRegionKey } from './geo-regions';
+export { GeoBlockPlugin, GeoBlockPluginOptions, MaintenanceWindow } from './plugin';
+export {
+    REGION_PRESETS,
+    RegionPresetMeta,
+    GeoRegionKey,
+    resolveAllowedCountries,
+    isAllowed,
+    ipMatchesAny,
+} from './geo-regions';
+export { GeoBlockEvent } from './geo-block-event.entity';

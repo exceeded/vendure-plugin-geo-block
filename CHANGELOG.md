@@ -1,8 +1,42 @@
 # Changelog
 
-All notable changes to `@hulo/vendure-plugin-geo-block` are documented
+All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.2.0]
+
+### Added
+- **37 region presets** (up from 8) — EU, EEA, EFTA, Schengen, Nordic,
+  Baltic, Benelux, DACH, Iberia, Balkans, GCC, MENA, ASEAN, APAC, East
+  Asia, South Asia, LATAM, Central America, Caribbean, Africa, G7, G20,
+  BRICS, OECD, NATO, Five Eyes, Commonwealth, English-speaking, and more.
+- **Soft-block mode** — per-channel `mode` field (`block` or `soft`).
+  Soft mode renders the storefront with a "we don't ship here" banner
+  instead of hiding it.
+- **IP allowlist with IPv4 CIDR** — per-channel list of IPs / ranges
+  that bypass every rule. For offices, oncall, payment processors.
+- **Audit log** — new `GeoBlockEvent` entity records every block
+  decision (country, region, IP, UA, reason).
+- **Stats endpoint** — `GET /geo-block/admin/stats` returns block totals,
+  top blocked countries, daily series and reason breakdown.
+- **Simulator endpoint** — `POST /geo-block/admin/simulate` dry-runs a
+  hypothetical visitor against current rules without persisting anything.
+- **Custom block page** — per-channel `blockMessage`, `blockRedirectUrl`,
+  `blockLogoUrl` fields.
+- **Scheduled maintenance window** — plugin option for a one-shot
+  date-range lockdown (every visitor blocked except the IP allowlist).
+- **Per-request `/geo-block/check` endpoint** — visitors can be checked
+  on the fly with logging to the audit table.
+- **Presets catalogue endpoint** — `GET /geo-block/presets` lists every
+  preset with metadata (kind, description, country count).
+- Redesigned admin UI: five tabs (Rules / Block page / IP allowlist /
+  Simulate / Stats) with filterable preset picker, soft/hard mode toggle
+  and a live simulator.
+
+### Changed
+- Admin UI now calls `/geo-block/admin/*` directly (no `/ees/` prefix).
+- `isAllowed()` and `ipMatchesAny()` exported for downstream use.
 
 ## [0.1.0] — Unreleased
 
@@ -16,5 +50,5 @@ and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0
 - Dedicated admin UI page with mode picker, region preset cards, chip
   pickers, live preview of the resolved allow-list.
 - `resolveAllowedCountries` exported as a pure helper.
-- Licence verification via `@hulo/vendure-licence-sdk` with revocation
+- Licence verification via `@huloglobal/vendure-licence-sdk` with revocation
   polling.
