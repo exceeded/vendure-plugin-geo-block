@@ -1,30 +1,19 @@
 # @huloglobal/vendure-plugin-geo-block
 
-Per-channel storefront geo-restriction for Vendure. Allow / block traffic
-by country, by curated region preset (EU, EEA, British Isles, all of
-Europe, North America, Oceania, Worldwide-with-denylist), and by UK
-subdivision (England / Wales / Scotland / Northern Ireland).
+Per-channel storefront geo-restriction for Vendure. Allow / block by
+country, by curated region preset (37 of them: EU, EEA, Schengen, GCC,
+ANZ, NATO, Commonwealth, …), by ISO-3166-2 subdivision (US states, CA
+provinces, AU states, DE Länder, IT regions, FR regions, ES autonomous
+communities, IN states, BR units, MX entities, UK constituent
+countries). Soft-block mode, IP allowlist, audit log, simulator and
+maintenance windows.
 
 Maintained by Wayne Garrison.
 
-## What you get
+## Buy
 
-- **Five clean Channel customFields** registered automatically — the
-  consumer doesn't have to repeat them in their `vendure-config.ts`.
-- **Public flat endpoint** at `GET /geo-block/site-config` returning the
-  resolved allow-list as JSON, intended to be polled (and cached) by
-  the storefront. Identifies the channel via the standard
-  `vendure-token` header (same one shop-api uses).
-- **Admin endpoints** at `/geo-block/admin/channels` (read) and
-  `/geo-block/admin/save` (write) backing the dedicated admin page.
-- **Dedicated admin UI** under EES Plugins nav: mode-picker (allow
-  specific places / allow worldwide except blocked), preset cards
-  (one-click region bundles), chip pickers for extras and blocks, live
-  preview of the resolved allow-list, UK-region sub-filter when GB is
-  resolved as allowed.
-- **Reusable resolver**: `resolveAllowedCountries({ regions,
-  extraAllowed, blocked })` is exported as a pure function for
-  downstream code.
+7-day free trial then **£9.95/month**, or **£199 one-off lifetime** at
+[elite.charity/licence/buy/vendure-plugin-geo-block](https://elite.charity/licence/buy/vendure-plugin-geo-block).
 
 ## Install
 
@@ -32,115 +21,152 @@ Maintained by Wayne Garrison.
 yarn add @huloglobal/vendure-plugin-geo-block
 ```
 
-## Wire up
-
 ```ts
 import { GeoBlockPlugin } from '@huloglobal/vendure-plugin-geo-block';
 
 export const config: VendureConfig = {
-  plugins: [
-    GeoBlockPlugin.init({
-      publicBaseUrl: 'https://shop.example.com',
-      licenceKey: process.env.HULO_LICENCE_KEY,
-    }),
-  ],
+    plugins: [
+        GeoBlockPlugin.init({
+            publicBaseUrl: 'https://shop.example.com',
+            licenceKey: process.env.HULO_LICENCE_KEY_GEO_BLOCK,
+
+            // Optional one-shot maintenance lockdown
+            maintenanceWindow: {
+                startsAt: '2026-07-15T02:00:00Z',
+                endsAt:   '2026-07-15T04:00:00Z',
+                allowedIps: ['203.0.113.0/24'],
+            },
+
+            // -- Security (recommended in production) --
+            signingSecret: process.env.HULO_GEO_BLOCK_SIGNING_SECRET,
+            hashAuditIps: true,
+            ipSalt: process.env.HULO_IP_SALT,
+            rateLimit: { capacity: 120, windowMs: 60_000 },
+
+            // -- Retention (opt-in) --
+            retention: { days: 90 },
+        }),
+    ],
 };
 ```
 
-Add the admin UI extension:
+Add `GeoBlockPlugin.uiExtensions` to your `compileUiExtensions` config.
 
-```ts
-import { GeoBlockPlugin } from '@huloglobal/vendure-plugin-geo-block';
+## Feature tour
 
-compileUiExtensions({
-  outputPath: 'admin-ui',
-  extensions: [GeoBlockPlugin.uiExtensions /* + your other extensions */],
-});
-```
+### 37 region presets
+
+One-click bundles in five groups:
+
+- **Geographic**: UK_ONLY, BRITISH_ISLES, UK_CROWN_DEPENDENCIES, EUROPE,
+  NORDIC, BALTIC, BENELUX, IBERIA, BALKANS, NORTH_AMERICA,
+  CENTRAL_AMERICA, CARIBBEAN, SOUTH_AMERICA, LATAM, OCEANIA, ANZ, MENA,
+  APAC, EAST_ASIA, SOUTH_ASIA, AFRICA
+- **Trade blocs**: EU, EEA, EFTA, GCC, ASEAN
+- **Political / economic**: SCHENGEN, G7, G20, BRICS, OECD, NATO, FIVE_EYES
+- **Language / cultural**: DACH, ENGLISH_SPEAKING, COMMONWEALTH
+- **Everywhere**: WORLDWIDE (with the denylist still applied)
+
+`GET /geo-block/presets` returns the live catalogue with country counts
+and descriptions.
+
+### Per-channel rules
+
+Each Vendure channel gets its own rules — perfect for multi-storefront
+installs (UK-only channel + EU channel + LATAM channel from one Vendure
+instance).
+
+### Soft-block mode
+
+Per-channel `mode` field. `block` hides the storefront entirely;
+`soft` renders it with a "we don't ship to your country" banner and
+hides the checkout button. The verdict `mode` field is returned on
+`/geo-block/check` so the storefront knows how to render.
+
+### Generic subdivisions
+
+JSON map `{ "US": ["CA","NY"], "DE": ["BY"] }` enforced on visitors via
+the channel custom field `geoBlockAllowedSubdivisions`. Catalogue at
+`GET /geo-block/subdivisions` covers 11 countries (200+ subdivisions).
+Legacy GB-only `allowedGbRegions` is preserved for back-compat.
+
+### IP allowlist with IPv4 CIDR
+
+Per-channel list of IPs / ranges that bypass every rule. Use for
+offices, oncall, payment-processor probes, monitoring.
+
+### Audit log + stats
+
+Every block decision recorded in `geo_block_event` with country, region,
+IP (hashed by default), UA, channel and reason. Admin Stats panel
+shows top blocked countries, daily series and reason breakdown.
+
+### "What-if" simulator
+
+`POST /geo-block/admin/simulate` dry-runs a hypothetical visitor against
+current rules without persisting anything — try any country / UK
+region / IP and see exactly what would happen.
+
+### Custom block page
+
+Per-channel `blockMessage`, `blockRedirectUrl`, `blockLogoUrl`. Falls
+back to sensible defaults per block reason.
+
+### Proxy-aware
+
+Reads `cf-ipcountry` / Akamai / Fastly region headers when present.
+Saves a MaxMind lookup per request.
+
+### Security
+
+- `signingSecret` HMAC-gates the `?country=` override on `/check` so
+  storefront staff (or attackers) can't spoof a location at will.
+- Audit IPs are SHA-256 hashed by default.
+- Rate limiter on every public endpoint.
+- Security headers via the licence-sdk helper on every response.
+
+## HTTP endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/geo-block/site-config` | public | resolved channel rules (cache client-side) |
+| `GET` | `/geo-block/check` | public | per-request decision + reason (logs to audit) |
+| `GET` | `/geo-block/presets` | public | 37-preset catalogue |
+| `GET` | `/geo-block/subdivisions` | public | subdivision catalogue (11 countries) |
+| `GET` | `/geo-block/admin/channels` | admin | list channels + rules |
+| `POST` | `/geo-block/admin/save` | admin | save a channel's rules |
+| `GET` | `/geo-block/admin/stats` | admin | block totals + top countries + series |
+| `POST` | `/geo-block/admin/simulate` | admin | dry-run a hypothetical visitor |
+| `POST` | `/geo-block/admin/gc` | admin | prune old audit rows |
+| `GET` | `/geo-block/status` | admin | version + update status |
 
 ## Storefront integration
 
-The plugin only manages **configuration**. Your storefront enforces the
-block by polling the resolved allow-list and comparing it to the
-visitor's resolved country. A Qwik / Next / Nuxt example using
-MaxMind GeoLite2 for the lookup:
-
 ```ts
-// Fetch + cache the per-channel config (60s TTL).
-const cfg = await fetch('https://shop.example.com/geo-block/site-config?token=' + channelToken)
-  .then(r => r.json());
+// On boot: cache the rules
+const cfg = await fetch('https://shop.example.com/geo-block/site-config', {
+    headers: { 'vendure-token': CHANNEL_TOKEN },
+}).then(r => r.json());
 
-if (cfg.geoBlock.enabled) {
-  const visitorCountry = /* run a MaxMind lookup on the visitor IP */;
-  const allowed =
-    cfg.geoBlock.allowedCountries === null
-    || cfg.geoBlock.allowedCountries.includes(visitorCountry);
-  if (!allowed || cfg.geoBlock.blockedCountries.includes(visitorCountry)) {
-    return new Response('Site temporarily unavailable.', { status: 503 });
-  }
+// Per request: get a decision (and audit it)
+const verdict = await fetch('https://shop.example.com/geo-block/check', {
+    headers: {
+        'vendure-token': CHANNEL_TOKEN,
+        'cf-ipcountry': req.headers['cf-ipcountry'] ?? '',
+    },
+}).then(r => r.json());
+if (!verdict.allowed) {
+    if (verdict.redirectUrl) return res.redirect(302, verdict.redirectUrl);
+    return res.render('blocked', { message: verdict.message, mode: verdict.mode });
 }
 ```
 
-## Behind Cloudflare / nginx / Akamai
+## Documentation
 
-The geo-block plugin itself doesn't need an IP — it just serves a
-resolved allow-list per channel. The **storefront** does the visitor
-lookup. Two paths to wire it up:
-
-### Path 1: use Cloudflare's resolved country header (zero infrastructure)
-
-When the "IP Geolocation → Send country data to origin" toggle is on
-in your Cloudflare dashboard (free plan), every request arrives with
-`CF-IPCountry: GB` already populated. Read it directly in your
-storefront:
-
-```ts
-const country = req.headers['cf-ipcountry'] || null;
-if (cfg.geoBlock.enabled && !cfg.geoBlock.allowedCountries?.includes(country)) {
-  return new Response('Site temporarily unavailable.', { status: 503 });
-}
-```
-
-Enable "Send subdivision data" too to also get `CF-Region-Code`
-(`ENG`, `WLS`, `SCT`, `NIR`) for UK subdivision filtering.
-
-### Path 2: self-hosted GeoIP lookup (works behind nginx / any proxy)
-
-If you're not on Cloudflare, look the visitor IP up via MaxMind
-GeoLite2-City in the storefront. The free `geolite2-redist` npm
-package mirrors the database without requiring a MaxMind account:
-
-```ts
-import { open } from 'geolite2-redist';
-import { Reader } from '@maxmind/geoip2-node';
-
-const reader = await open('GeoLite2-City', p => Reader.open(p));
-
-// Real IP from nginx / Caddy. The plugin's proxy-headers helper does
-// the same precedence as the email-tracking plugin's IP extractor:
-//   cf-connecting-ip → true-client-ip → x-real-ip → x-forwarded-for[0]
-const ip = req.headers['cf-connecting-ip']
-        || req.headers['x-real-ip']
-        || (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-
-const r = reader.city(ip);
-const country = r.country?.isoCode || null;
-```
-
-Both paths are documented end-to-end in the plugin's example
-storefront snippets at [the README on GitHub](https://github.com/exceeded/vendure-plugin-geo-block).
-
-## Init options
-
-| Option | Type | Required | Description |
-| --- | --- | --- | --- |
-| `publicBaseUrl` | `string` | yes | Public hostname of your Vendure server. Used in licence host-match. |
-| `licenceKey` | `string` | no* | JWT licence key. Without it `enabled` is forced to `false`. |
-
-\* Required for production use. Buy at
-`https://elite-software.co.uk/licence/buy/vendure-plugin-geo-block`.
+User manual + screenshots:
+[huloglobal.com/vendure-plugins/geo-block/docs/](https://huloglobal.com/vendure-plugins/geo-block/docs/)
 
 ## Licence
 
-Commercial — see [LICENSE](./LICENSE). Requires an active subscription
-($9.95/mo) or a perpetual licence.
+Commercial. Buy at
+[elite.charity/licence/buy/vendure-plugin-geo-block](https://elite.charity/licence/buy/vendure-plugin-geo-block).
