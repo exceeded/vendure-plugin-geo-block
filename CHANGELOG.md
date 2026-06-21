@@ -4,6 +4,48 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1]
+
+### Changed
+- Comprehensive README refresh — documents the full v0.3 feature set
+  including the 37 region presets, generic subdivisions catalogue,
+  security primitives, and opt-in retention.
+
+## [0.3.0]
+
+### Added
+- Generic country-subdivisions schema. New channel custom field
+  `geoBlockAllowedSubdivisions` storing a JSON map
+  `{ "US": ["CA","NY"], "DE": ["BY"] }`. Storefront enforcement
+  checks both the new map and the legacy GB-only field.
+- Curated subdivision catalogue for 11 countries (GB, US, CA, AU, DE,
+  IT, FR, ES, IN, BR, MX) — 200+ subdivisions, surfaced at
+  `GET /geo-block/subdivisions`.
+- Admin UI: subdivisions hidden behind a toggle by default; pick any
+  country to apply a subdivision filter.
+- Rate limiter (120/60s default) on `/site-config` + `/check`.
+- HMAC-gated `?country=` override on `/check` (`signingSecret`).
+- Hashed audit IPs by default (`hashAuditIps`, `ipSalt`).
+- Security headers on every response.
+- Opt-in retention sweeper via `options.retention`.
+
+## [0.2.3]
+
+### Changed
+- Mobile-friendly admin UI — channel row + tab bar stack and scroll
+  horizontally, preset and mode grids collapse to single column.
+
+## [0.2.2]
+
+### Changed
+- Republish targeting `@huloglobal/vendure-licence-sdk@^0.2.0`.
+
+## [0.2.1]
+
+### Added
+- `UpdateChecker` integration — `/geo-block/status` endpoint returns
+  version + update info; admin banner appears on new releases.
+
 ## [0.2.0]
 
 ### Added
