@@ -1,7 +1,8 @@
 import { LanguageCode, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
-import { RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
+import { fingerprintPublicKey, Heartbeat, LicenceStatus, RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
 import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
+import { GeoBlockAdminResolver, geoBlockAdminApiSchema } from './admin-api';
 import { REGION_PRESETS } from './geo-regions';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -77,8 +78,13 @@ export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
 @VendurePlugin({
     imports: [PluginCommonModule],
     controllers: [GeoBlockController],
+    providers: [GeoBlockAdminResolver],
     entities: [GeoBlockEvent],
     compatibility: '^3.0.0',
+    adminApiExtensions: {
+        schema: geoBlockAdminApiSchema,
+        resolvers: [GeoBlockAdminResolver],
+    },
     configuration: config => {
         // Convert REGION_PRESETS into Vendure customField option entries
         // so the admin gets the same human-readable picker the dedicated
@@ -161,10 +167,14 @@ export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
 export class GeoBlockPlugin {
     private static revocation: RevocationChecker | null = null;
     private static updateChecker: UpdateChecker | null = null;
+    private static heartbeat: Heartbeat | null = null;
+    private static licenceStatus: LicenceStatus | null = null;
 
     static getUpdateChecker(): UpdateChecker | null { return GeoBlockPlugin.updateChecker; }
     static getPackageVersion(): string { return PKG_VERSION; }
     static getPackageName(): string { return PKG_NAME; }
+    /** Read by the controller to gate premium features. */
+    static getLicenceStatus(): LicenceStatus | null { return GeoBlockPlugin.licenceStatus; }
 
     static init(options: GeoBlockPluginOptions): Type<GeoBlockPlugin> {
         cachedOptions = options;
@@ -187,13 +197,24 @@ export class GeoBlockPlugin {
             publicKey: HULO_PUBLIC_KEY,
             revokedIds: GeoBlockPlugin.revocation.getRevokedIds(),
         });
+        GeoBlockPlugin.licenceStatus = status;
 
         if (!status.valid) {
             // eslint-disable-next-line no-console
             console.warn(
                 `[@huloglobal/vendure-plugin-geo-block] ${status.message}` +
-                ` — Running in unlicensed mode (settings still saveable, but the public endpoint always reports enabled=false). Purchase a key at https://elite-software.co.uk/licence/buy/${PLUGIN_ID}`,
+                ` — Running in FREE tier: 5 of 37 region presets, no subdivisions, no soft-block, no audit log. Buy a licence at https://elite.charity/licence/buy/${PLUGIN_ID}`,
             );
+        }
+
+        if (!GeoBlockPlugin.heartbeat) {
+            GeoBlockPlugin.heartbeat = new Heartbeat({
+                packageName: PKG_NAME,
+                packageVersion: PKG_VERSION,
+                licenceKey: options.licenceKey,
+                publicKeyFingerprint: fingerprintPublicKey(HULO_PUBLIC_KEY),
+            });
+            GeoBlockPlugin.heartbeat.start();
         }
 
         return GeoBlockPlugin;

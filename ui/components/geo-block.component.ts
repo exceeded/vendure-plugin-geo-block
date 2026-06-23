@@ -582,6 +582,15 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
 
         /* Mobile-friendly layout under 768px */
         @media (max-width: 767px) {
+            /* 44px tap targets on every interactive element in our component */
+            :host button, :host .btn { min-height: 40px; }
+            :host vdr-action-bar { flex-wrap: wrap; gap: 6px; }
+            :host vdr-action-bar button { min-height: 40px; padding: 6px 12px; }
+            .save-bar button { min-height: 48px; font-size: 15px; }
+            .preset-card { min-height: 44px; padding: 14px 12px; }
+            .uk-pill { min-height: 40px; padding: 8px 16px; }
+            .chip { min-height: 32px; padding: 6px 12px; }
+            .chip-x { min-width: 24px; min-height: 24px; display: inline-grid; place-items: center; padding: 0; }
             .chan-row { flex-direction: column; align-items: stretch; gap: 10px; }
             .chan-row .form-select { width: 100%; min-width: 0; }
             .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; white-space: nowrap; }

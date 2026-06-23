@@ -158,6 +158,21 @@ export interface RegionPresetMeta {
     countryCount: number | null;
 }
 
+/**
+ * Subset of presets available in the FREE / unlicensed tier.
+ * Customers can still choose any of these without paying; the full
+ * 37-preset catalogue requires a licence. Picked so the free tier
+ * is genuinely useful (worldwide, UK, EU, NA, OCE) but the paid
+ * tier is clearly more capable (BRICS, GCC, ASEAN, OFAC etc.).
+ */
+export const FREE_TIER_PRESET_KEYS: ReadonlyArray<GeoRegionKey> = [
+    'WORLDWIDE',
+    'UK_ONLY',
+    'EU',
+    'NORTH_AMERICA',
+    'OCEANIA',
+];
+
 export const REGION_PRESETS: RegionPresetMeta[] = [
     { key: 'WORLDWIDE', label: 'Worldwide', kind: 'all', description: 'Allow every country (denylist still applies).', countryCount: null },
 

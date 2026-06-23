@@ -2,6 +2,8 @@ import { Body, Controller, Get, Injectable, OnApplicationBootstrap, OnModuleDest
 import {
     applySecurityHeaders,
     hashIp,
+    isLicensed,
+    premiumFeatureError,
     RateLimiter,
     startRetentionSweeper,
     verifySignedValue,
@@ -13,6 +15,7 @@ import { SUBDIVISIONS, hasSubdivisions } from './subdivisions';
 import {
     isAllowed,
     ipMatchesAny,
+    FREE_TIER_PRESET_KEYS,
     REGION_PRESETS,
     resolveAllowedCountries,
 } from './geo-regions';
@@ -193,6 +196,16 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         if (!row) return res.json({ allowed: true, reason: 'unknown-channel' });
         const cfg = this.buildConfig(token, row);
 
+        // Tier-gate: unlicensed installs force `mode=block` (no soft-
+        // block / banner-only mode) and ignore the saved subdivision
+        // map. The block decision itself still runs so the free tier
+        // is genuinely useful — just narrower.
+        const licensed = isLicensed(GeoBlockPlugin.getLicenceStatus());
+        if (!licensed) {
+            cfg.geoBlock.mode = 'block';
+            cfg.geoBlock.allowedSubdivisions = {};
+        }
+
         const opts = getOptions();
         const ip = getRealIp(req);
 
@@ -271,7 +284,20 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      * and any storefront that wants to show "we serve <X>". */
     @Get('presets')
     presets(@Res() res: Response) {
-        return res.json({ presets: REGION_PRESETS });
+        const licensed = isLicensed(GeoBlockPlugin.getLicenceStatus());
+        // Unlicensed callers get only the 5 free-tier presets. Each
+        // preset is also annotated with `requiresLicence` so the admin
+        // UI can show a small lock icon next to gated rows.
+        const presets = REGION_PRESETS.map(p => ({
+            ...p,
+            requiresLicence: !FREE_TIER_PRESET_KEYS.includes(p.key),
+        }));
+        return res.json({
+            presets: licensed
+                ? presets
+                : presets.filter(p => FREE_TIER_PRESET_KEYS.includes(p.key)),
+            tier: licensed ? 'paid' : 'free',
+        });
     }
 
     /** Catalogue of country subdivisions. Lets the admin UI show a
@@ -279,6 +305,12 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      *  (US states, CA provinces, AU states, DE Länder, etc.). */
     @Get('subdivisions')
     subdivisions(@Res() res: Response) {
+        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+            // Subdivision-level blocking is paid-only. Returning an
+            // empty map keeps the admin UI's picker silent rather
+            // than showing options that won't actually be honoured.
+            return res.json({ subdivisions: {} });
+        }
         return res.json({ subdivisions: SUBDIVISIONS });
     }
 
@@ -415,6 +447,9 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      */
     @Get('admin/stats')
     async stats(@Ctx() ctx: RequestContext, @Req() req: Request, @Res() res: Response) {
+        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+            return res.status(402).json(premiumFeatureError('vendure-plugin-geo-block'));
+        }
         if (!requireAdmin(ctx, res, false)) return;
         const days = Math.min(Math.max(parseInt((req.query as any).days || '30', 10) || 30, 1), 365);
         const channelId = (req.query as any).channelId
@@ -469,6 +504,9 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     @Post('admin/simulate')
     async simulate(@Ctx() ctx: RequestContext, @Body() body: any, @Res() res: Response) {
         if (!requireAdmin(ctx, res, false)) return;
+        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+            return res.status(402).json(premiumFeatureError('vendure-plugin-geo-block'));
+        }
         if (!body?.token) return res.status(400).json({ error: 'channel token required' });
         const row = await this.loadChannelRow(body.token);
         if (!row) return res.status(404).json({ error: 'channel not found' });
@@ -575,6 +613,10 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         decision: 'block' | 'soft-block' | 'allow';
         reason: string;
     }): Promise<void> {
+        // Audit log persistence is a paid feature — unlicensed mode
+        // returns immediately. The block decision itself is unaffected;
+        // the operator just doesn't get the historical view.
+        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) return;
         try {
             const repo = this.connection.rawConnection.getRepository(GeoBlockEvent);
             const row = repo.create({
