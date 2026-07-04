@@ -1,5 +1,5 @@
 import { LanguageCode, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
-import { fingerprintPublicKey, Heartbeat, LicenceStatus, RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence } from '@huloglobal/vendure-licence-sdk';
+import { fingerprintPublicKey, Heartbeat, LicenceStatus, RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence, warnIfIncompatibleVendure } from '@huloglobal/vendure-licence-sdk';
 import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
 import { GeoBlockAdminResolver, geoBlockAdminApiSchema } from './admin-api';
@@ -178,6 +178,14 @@ export class GeoBlockPlugin {
 
     static init(options: GeoBlockPluginOptions): Type<GeoBlockPlugin> {
         cachedOptions = options;
+
+        // Warn if @vendure/core at runtime is outside the tested
+        // range. Non-fatal — the plugin boots and works.
+        warnIfIncompatibleVendure({
+            pluginPackageName: PKG_NAME,
+            pluginPackageVersion: PKG_VERSION,
+            supportedRange: { min: '3.5.0', max: '4.0.0' },
+        });
 
         if (!GeoBlockPlugin.revocation) {
             GeoBlockPlugin.revocation = new RevocationChecker(REVOCATION_URL);
