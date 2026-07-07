@@ -28,18 +28,81 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
     selector: 'ees-geo-block',
     standalone: false,
     template: `
+        <!-- ── HULO brand hero ───────────────────────────────────────
+             Consistent header pattern across every HULO plugin.
+             Logo + plain-English one-liner + help + refresh in the
+             action bar. Keeps the operator anchored on what this
+             page does before they see the tabs. -->
         <vdr-page-block>
-            <vdr-action-bar>
-                <vdr-ab-left>
-                    <h2>Site access</h2>
-                    <p class="subtitle">Per-channel geo-restrictions, IP allowlist, audit log.</p>
-                </vdr-ab-left>
-                <vdr-ab-right>
+            <div class="hulo-hero">
+                <div class="hulo-hero-logo" aria-hidden="true">
+                    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="64" height="64" rx="14" fill="#0f1419"/>
+                        <circle cx="32" cy="32" r="17" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+                        <ellipse cx="32" cy="32" rx="17" ry="7" fill="none" stroke="#ffffff" stroke-width="2"/>
+                        <ellipse cx="32" cy="32" rx="7" ry="17" fill="none" stroke="#ffffff" stroke-width="2"/>
+                        <line x1="18" y1="46" x2="46" y2="18" stroke="#f59e0b" stroke-width="4" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div class="hulo-hero-text">
+                    <h2 class="hulo-hero-title">Site access</h2>
+                    <p class="hulo-hero-sub">Decide who can see this storefront — by country, IP, business hours or bot. All rules apply per channel.</p>
+                </div>
+                <div class="hulo-hero-actions">
+                    <button class="btn btn-link hulo-help-btn" (click)="helpOpen = !helpOpen" [attr.aria-expanded]="helpOpen">
+                        <clr-icon shape="help"></clr-icon>
+                        <span>Help</span>
+                    </button>
                     <button class="btn btn-link" (click)="reload()" [disabled]="loading">
                         <clr-icon shape="refresh"></clr-icon> Refresh
                     </button>
-                </vdr-ab-right>
-            </vdr-action-bar>
+                </div>
+            </div>
+        </vdr-page-block>
+
+        <!-- Help drawer — collapsed by default. Plain-English steps
+             + docs + support links so operators don't have to context-
+             switch to figure out what a control does. -->
+        <vdr-page-block *ngIf="helpOpen">
+            <div class="hulo-help-drawer">
+                <div class="hulo-help-grid">
+                    <div class="hulo-help-card">
+                        <div class="hulo-help-num">1</div>
+                        <h4>Pick a channel</h4>
+                        <p>Every rule below applies to the channel you have selected. Multi-store operators can set different rules per channel.</p>
+                    </div>
+                    <div class="hulo-help-card">
+                        <div class="hulo-help-num">2</div>
+                        <h4>Choose your rules</h4>
+                        <p>Region presets (EU, GCC, ANZ…) get you started fast, or pick countries and states one by one. Add IPs that always bypass every rule.</p>
+                    </div>
+                    <div class="hulo-help-card">
+                        <div class="hulo-help-num">3</div>
+                        <h4>Preview + go live</h4>
+                        <p>Use the Simulate tab to check what a visitor from country X would see. When you're happy, flip Site access on. Stats appear as visitors arrive.</p>
+                    </div>
+                </div>
+                <div class="hulo-help-links">
+                    <a href="https://huloglobal.com/vendure-plugins/geo-block/docs/" target="_blank">Full docs ↗</a>
+                    <a href="https://huloglobal.com/vendure-plugins/geo-block/" target="_blank">Plugin page ↗</a>
+                    <a href="mailto:support@huloglobal.com">Email support</a>
+                </div>
+            </div>
+        </vdr-page-block>
+
+        <!-- Empty / first-run panel — shown when the channel exists
+             but has never been configured. Gives the operator a
+             one-click "turn on with sensible defaults" so they never
+             stare at a blank screen. -->
+        <vdr-page-block *ngIf="!loading && current && showFirstRun()">
+            <div class="hulo-firstrun">
+                <div class="hulo-firstrun-emoji">🎉</div>
+                <div>
+                    <h3>You're all set to configure {{ current.code || 'this channel' }}</h3>
+                    <p>Nothing is enforced yet. Pick a region preset below, or flip Site access on to start with an allow-list of Worldwide (nothing blocked).</p>
+                </div>
+                <button class="btn btn-primary" (click)="turnOnWithDefaults()">Turn on (Worldwide)</button>
+            </div>
         </vdr-page-block>
 
         <vdr-page-block *ngIf="updateBanner">
@@ -437,6 +500,59 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         :host { color: var(--color-text-100, inherit); display: block; }
         .subtitle { font-size: 13px; color: var(--color-component-color-300); margin: 2px 0 0; }
 
+        /* ── HULO shared hero + help pattern ─────────────────────────
+           Same block across every HULO plugin so the operator sees
+           a consistent brand + help affordance. Colour vars fall back
+           through Clarity to hard-coded amber/navy for admin themes
+           that don't set them. */
+        .hulo-hero {
+            display: flex; align-items: center; gap: 18px;
+            padding: 20px 22px; border-radius: 14px;
+            background: linear-gradient(135deg, #0f1419 0%, #1e293b 100%);
+            color: #fff;
+            box-shadow: 0 1px 3px rgba(15,23,42,.15), 0 8px 24px rgba(15,23,42,.08);
+        }
+        .hulo-hero-logo { flex: 0 0 auto; width: 56px; height: 56px; }
+        .hulo-hero-logo svg { width: 100%; height: 100%; display: block; }
+        .hulo-hero-text { flex: 1 1 auto; min-width: 0; }
+        .hulo-hero-title { color: #fff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+        .hulo-hero-sub { color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 4px 0 0; max-width: 640px; }
+        .hulo-hero-actions { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+        .hulo-hero-actions .btn { color: #f8fafc; }
+        .hulo-hero-actions .btn:hover { color: #f59e0b; }
+        .hulo-help-btn clr-icon { margin-right: 4px; }
+        .hulo-help-drawer {
+            background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px;
+            padding: 20px 22px; color: #451a03;
+        }
+        .hulo-help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+        .hulo-help-card { background: #ffffff; border-radius: 10px; padding: 16px; }
+        .hulo-help-num {
+            width: 24px; height: 24px; border-radius: 999px;
+            background: #f59e0b; color: #fff; font-weight: 700; font-size: 13px;
+            display: grid; place-items: center; margin-bottom: 8px;
+        }
+        .hulo-help-card h4 { margin: 0 0 4px; font-size: 14px; color: #0f172a; }
+        .hulo-help-card p { margin: 0; font-size: 13px; line-height: 1.5; color: #475569; }
+        .hulo-help-links { margin-top: 16px; padding-top: 14px; border-top: 1px solid #fde68a; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
+        .hulo-help-links a { color: #b45309; text-decoration: none; font-weight: 600; }
+        .hulo-help-links a:hover { text-decoration: underline; }
+        .hulo-firstrun {
+            display: flex; align-items: center; gap: 16px;
+            padding: 20px 22px; border-radius: 12px;
+            background: #ecfdf5; border: 1px solid #a7f3d0; color: #064e3b;
+        }
+        .hulo-firstrun-emoji { font-size: 32px; line-height: 1; }
+        .hulo-firstrun h3 { margin: 0; font-size: 16px; color: #064e3b; }
+        .hulo-firstrun p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: #065f46; max-width: 640px; }
+        .hulo-firstrun .btn { margin-left: auto; flex: 0 0 auto; }
+        @media (max-width: 640px) {
+            .hulo-hero { flex-wrap: wrap; }
+            .hulo-hero-actions { width: 100%; justify-content: flex-end; }
+            .hulo-firstrun { flex-wrap: wrap; }
+            .hulo-firstrun .btn { margin-left: 0; margin-top: 8px; width: 100%; }
+        }
+
         .top-bar { border-top: 3px solid var(--color-primary-500, #1d4ed8); }
         .chan-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         .lbl { font-size: 12px; color: var(--color-component-color-300); }
@@ -650,6 +766,47 @@ export class GeoBlockComponent implements OnInit {
 
     updateBanner: { packageName: string; current: string; latest: string; isMajor: boolean } | null = null;
     private dismissKey = 'huloglobal-geo-block-update-dismissed';
+    private firstRunDismissKey = 'huloglobal-geo-block-firstrun-dismissed';
+
+    /** Help drawer toggle. Rendered right under the hero when true. */
+    helpOpen = false;
+
+    /**
+     * True when the currently-selected channel has never been
+     * configured for geo-block AND the operator hasn't dismissed the
+     * first-run panel. Cheap check — no rules of any kind set.
+     */
+    showFirstRun(): boolean {
+        try {
+            if (localStorage.getItem(this.firstRunDismissKey) === '1') return false;
+        } catch { /* localStorage may be disabled */ }
+        if (!this.current) return false;
+        if (this.current.enabled) return false;
+        if (this.current.allowedRegions?.length) return false;
+        if (this.current.extraAllowed?.length) return false;
+        if (this.current.blockedCountries?.length) return false;
+        return true;
+    }
+
+    /**
+     * "Turn on with sensible defaults" — Worldwide preset + block
+     * mode. The panel is destined for the first-time user who wants
+     * to see something happen without picking anything. They can
+     * always narrow down after.
+     */
+    turnOnWithDefaults(): void {
+        if (!this.current) return;
+        this.current.enabled = true;
+        this.current.mode = 'block';
+        // Worldwide preset — nothing blocked, everything allowed —
+        // gives the operator a "geo-block is on but not blocking
+        // anyone yet" state so they can layer restrictions on.
+        if (!this.current.allowedRegions?.length) {
+            this.current.allowedRegions = ['worldwide'];
+        }
+        try { localStorage.setItem(this.firstRunDismissKey, '1'); } catch {}
+        this.markDirty();
+    }
 
     presets: PresetMeta[] = [];
     presetGroups = [
