@@ -4,6 +4,7 @@ import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
 import { GeoBlockAdminResolver, geoBlockAdminApiSchema } from './admin-api';
 import { REGION_PRESETS } from './geo-regions';
+import type { BotAllowlist } from './bot-detect';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PKG_VERSION: string = require('../package.json').version;
@@ -46,6 +47,22 @@ export interface GeoBlockPluginOptions {
     // ── Retention ───────────────────────────────────────────────────────
     /** Auto-prune `geo_block_event` rows older than `days` days. */
     retention?: RetentionOptions;
+
+    // ── SEO / bot allowlist ────────────────────────────────────────────
+    /** Which `User-Agent`s bypass the geo-block. Default `'strict'` —
+     *  well-known SEO + social crawlers (Googlebot, Bingbot, LinkedIn,
+     *  Slack, etc.). Set to `false` only if you handle bot filtering
+     *  upstream (Cloudflare, WAF). Custom arrays support string
+     *  substrings + RegExp entries. See `bot-detect.ts` for detail. */
+    botAllowlist?: BotAllowlist;
+
+    // ── Storefront helper ──────────────────────────────────────────────
+    /** Optional support email surfaced on the branded block page.
+     *  Rendered inline as "Questions? <email>". Empty = no link. */
+    supportEmail?: string;
+    /** Cache-Control max-age (seconds) for the storefront helper JS.
+     *  Default 300. Public + stale-while-revalidate. */
+    storefrontHelperMaxAgeSec?: number;
 }
 
 const HULO_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -159,6 +176,11 @@ export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
                 name: 'geoBlockBlockLogoUrl', type: 'string', public: true, nullable: true,
                 label: [{ languageCode: LanguageCode.en, value: 'Geo-block: logo URL' }],
                 description: [{ languageCode: LanguageCode.en, value: 'Optional logo shown above the block message.' }],
+            },
+            {
+                name: 'geoBlockSchedule', type: 'text', public: true, nullable: true,
+                label: [{ languageCode: LanguageCode.en, value: 'Geo-block: business-hours schedule' }],
+                description: [{ languageCode: LanguageCode.en, value: 'Optional JSON. Recurring weekly window when the store is open. Outside the window, the outsideAction (block / soft / allow) is applied. Example: {"timezone":"Europe/London","days":[1,2,3,4,5],"from":"09:00","to":"17:30","outsideAction":"soft","outsideMessage":"We\'re closed for orders overnight."}. Empty = no schedule.' }],
             },
         ]);
         return config;

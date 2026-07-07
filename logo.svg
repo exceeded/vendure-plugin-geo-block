@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="HULO Geo Block">
+  <title>HULO Geo Block</title>
+  <!-- HULO frame. -->
+  <rect width="64" height="64" rx="14" fill="#0f1419"/>
+  <!-- Globe silhouette — outer ring + two latitudes + one meridian.
+       Kept intentionally minimal so the block-slash on top reads. -->
+  <circle cx="32" cy="32" r="17" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+  <ellipse cx="32" cy="32" rx="17" ry="7" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <ellipse cx="32" cy="32" rx="7" ry="17" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <!-- Block slash — amber diagonal that unambiguously identifies
+       this as geo-BLOCK, not just a generic globe icon. Drawn ABOVE
+       everything so the "no entry" reading is instant. -->
+  <line x1="18" y1="46" x2="46" y2="18"
+        stroke="#f59e0b" stroke-width="4" stroke-linecap="round"/>
+</svg>

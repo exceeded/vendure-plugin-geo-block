@@ -1,3 +1,5 @@
+<img src="./logo.svg" alt="HULO Geo Block" align="left" width="72" height="72" style="margin-right: 16px;" />
+
 # @huloglobal/vendure-plugin-geo-block
 
 Per-channel storefront geo-restriction for Vendure. Allow / block by
@@ -7,6 +9,11 @@ provinces, AU states, DE Länder, IT regions, FR regions, ES autonomous
 communities, IN states, BR units, MX entities, UK constituent
 countries). Soft-block mode, IP allowlist, audit log, simulator and
 maintenance windows.
+
+**New in 0.7:** SEO-safe bot allowlist so Googlebot / Bingbot / social
+crawlers bypass by default · per-channel business-hours schedule
+(overnight windows + DST handled) · one-line storefront drop-in JS
+(`hulo-geo.js`) · branded block page (`/geo-block/blocked`).
 
 Maintained by Wayne Garrison.
 
@@ -139,8 +146,29 @@ Saves a MaxMind lookup per request.
 | `POST` | `/geo-block/admin/simulate` | admin | dry-run a hypothetical visitor |
 | `POST` | `/geo-block/admin/gc` | admin | prune old audit rows |
 | `GET` | `/geo-block/status` | admin | version + update status |
+| `GET` | `/geo-block/hulo-geo.js` | public | storefront drop-in helper JS |
+| `GET` | `/geo-block/blocked` | public | branded block page (HTML or JSON) |
 
 ## Storefront integration
+
+### Drop-in (recommended) — one script tag, zero code
+
+```html
+<script src="https://shop.example.com/geo-block/hulo-geo.js"
+        data-channel-token="YOUR_CHANNEL_TOKEN" async></script>
+```
+
+On `DOMContentLoaded` the helper calls `/geo-block/check`, and:
+
+- if the visitor is allowed → no-op
+- if `mode=block` → redirects to `/geo-block/blocked` (or the channel's
+  `blockRedirectUrl` if set, or the tag's `data-redirect`)
+- if `mode=soft` → injects a sticky top banner with the operator's message
+
+Optional `data-*` attributes: `data-redirect="/somewhere-else"`,
+`data-timeout-ms="2500"`, `data-preview` (log verdict, no side effects).
+
+### Server-side integration (full control)
 
 ```ts
 // On boot: cache the rules

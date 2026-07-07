@@ -21,8 +21,29 @@ import {
 } from './geo-regions';
 import { GeoBlockPlugin, getOptions } from './plugin';
 import { getRealIp, getResolvedCountry, getResolvedRegion } from './proxy-headers';
+import { isAllowlistedBot, matchedBotEntry } from './bot-detect';
+import { BusinessHoursSchedule, checkSchedule } from './schedule';
+import { buildHuloGeoJs, buildBlockedPageHtml } from './storefront-assets';
 
 const loggerCtx = 'GeoBlockController';
+
+/** JSON.parse a value from a channel row's `text` field, tolerating
+ *  null / empty. Returns null on any parse failure. */
+function parseJsonSafely<T = any>(raw: any): T | null {
+    if (!raw) return null;
+    if (typeof raw === 'object') return raw as T;
+    try { return JSON.parse(String(raw)) as T; } catch { return null; }
+}
+
+/** Minimal HTML-escape for user-supplied text going into the block
+ *  page template. */
+function escapeHtml(s: string): string {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 
 function requireAdmin(ctx: RequestContext, res: Response, write = false): boolean {
     if (!ctx?.activeUserId) {
@@ -230,10 +251,44 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
 
         const allowlist = parseList(row.ipAllowlist || '');
         const channelId = Number(row.id) || 1;
+        const ua = String(req.headers['user-agent'] || '');
 
         // 1. IP allowlist trumps everything else.
         if (ipMatchesAny(ip, allowlist)) {
             return res.json({ allowed: true, reason: 'ip-allowlist', mode: cfg.geoBlock.mode });
+        }
+        // 1b. SEO / social crawler allowlist. Runs before geo rules
+        //     so Googlebot etc. don't get blocked and de-index the
+        //     site silently. Configurable via `botAllowlist` plugin
+        //     option — default `'strict'` (well-known SEO + social
+        //     bots only).
+        if (isAllowlistedBot(ua, opts.botAllowlist ?? 'strict')) {
+            return res.json({ allowed: true, reason: 'bot-allowlist', mode: cfg.geoBlock.mode });
+        }
+        // 1c. Business-hours schedule (per-channel). Kicks in
+        //     regardless of country when configured. IP allowlist
+        //     + bot allowlist still bypass this — office IPs and
+        //     search crawlers should never see "closed for orders".
+        const schedule = parseJsonSafely<BusinessHoursSchedule>(row.schedule);
+        const sv = checkSchedule(schedule);
+        if (!sv.inHours && sv.action) {
+            const effectiveMode = licensed
+                ? (sv.action === 'soft' ? 'soft' : 'block')
+                : 'block';
+            await this.logEvent({
+                channelId, country, region, ip,
+                ua, url: req.originalUrl,
+                decision: effectiveMode === 'soft' ? 'soft-block' : 'block',
+                reason: 'schedule',
+            });
+            return res.json({
+                allowed: false,
+                reason: 'schedule',
+                mode: effectiveMode,
+                message: sv.message,
+                redirectUrl: cfg.geoBlock.blockRedirectUrl,
+                logoUrl: cfg.geoBlock.blockLogoUrl,
+            });
         }
         // 2. Scheduled maintenance window.
         if (opts.maintenanceWindow && inWindow(opts.maintenanceWindow)) {
@@ -540,6 +595,81 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         return res.json({ deleted: result?.affectedRows ?? 0, olderThanDays });
     }
 
+    /**
+     * Storefront helper JS — the one-line drop-in.
+     *
+     * Storefronts add
+     *   <script src="https://<host>/geo-block/hulo-geo.js"
+     *           data-channel-token="…" async></script>
+     * and get geo-blocking with zero custom code. See
+     * `storefront-assets.ts` for the full contract of `data-*` attrs.
+     *
+     * Aggressively cached — this file is static per `publicBaseUrl`.
+     */
+    @Get('hulo-geo.js')
+    huloGeoJs(@Res() res: Response) {
+        const opts = getOptions();
+        const body = buildHuloGeoJs({ publicBaseUrl: opts.publicBaseUrl || '' });
+        const maxAge = Math.max(60, opts.storefrontHelperMaxAgeSec ?? 300);
+        res.type('application/javascript');
+        res.setHeader('Cache-Control', `public, max-age=${maxAge}, stale-while-revalidate=${maxAge * 4}`);
+        applySecurityHeaders(res);
+        return res.send(body);
+    }
+
+    /**
+     * Branded block page — served in HTML for direct visitor navigation
+     * (the storefront helper redirects here for hard blocks). Also
+     * available as JSON via `Accept: application/json`, for storefronts
+     * that want to render their own UI but still lift the copy.
+     *
+     * Accepts `t` (channel token), `reason`, `country`, and optional
+     * `msg` (operator-provided). Every value is HTML-escaped before it
+     * lands in the template.
+     */
+    @Get('blocked')
+    async blocked(@Req() req: Request, @Res() res: Response) {
+        applySecurityHeaders(res);
+        if (this.rateLimited(req, res, 'blocked')) return;
+
+        const token = String((req.query as any).t || '').trim();
+        const reason = String((req.query as any).reason || 'geo').slice(0, 40);
+        const country = String((req.query as any).country || '').slice(0, 4).toUpperCase();
+        const opts = getOptions();
+
+        let logoUrl: string | null = null;
+        let redirectUrl: string | null = null;
+        let msg: string = String((req.query as any).msg || '').slice(0, 400);
+        if (token) {
+            const row = await this.loadChannelRow(token);
+            if (row) {
+                logoUrl = row.blockLogoUrl || null;
+                redirectUrl = row.blockRedirectUrl || null;
+                if (!msg && row.blockMessage) msg = String(row.blockMessage).slice(0, 400);
+            }
+        }
+        if (!msg) msg = this.defaultMessage(reason as any);
+
+        const wantsJson = String(req.headers.accept || '').includes('application/json');
+        if (wantsJson) {
+            return res.json({ reason, country: country || null, message: msg, logoUrl, redirectUrl });
+        }
+
+        const html = buildBlockedPageHtml({
+            title: 'Not available in your region',
+            heading: reason === 'schedule' ? 'Sorry, we’re closed' : 'Sorry, this store is not available',
+            message: escapeHtml(msg),
+            reason: escapeHtml(reason),
+            country: country ? escapeHtml(country) : null,
+            logoUrl: logoUrl ? escapeHtml(logoUrl) : null,
+            redirectUrl: redirectUrl ? escapeHtml(redirectUrl) : null,
+            supportEmail: opts.supportEmail ? escapeHtml(opts.supportEmail) : null,
+        });
+        res.type('text/html');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.send(html);
+    }
+
     // -- private helpers ---------------------------------------------------
 
     private async loadChannelRow(token: string): Promise<any | null> {
@@ -553,10 +683,12 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
                     customFieldsGeoblockallowedcountries    AS extraAllowed,
                     customFieldsGeoblockblockedcountries    AS blockedCountries,
                     customFieldsGeoblockallowedgbregions    AS allowedGbRegions,
+                    customFieldsGeoblockallowedsubdivisions AS allowedSubdivisionsJson,
                     customFieldsGeoblockipallowlist         AS ipAllowlist,
                     customFieldsGeoblockblockmessage        AS blockMessage,
                     customFieldsGeoblockblockredirecturl    AS blockRedirectUrl,
-                    customFieldsGeoblockblocklogourl        AS blockLogoUrl
+                    customFieldsGeoblockblocklogourl        AS blockLogoUrl,
+                    customFieldsGeoblockschedule            AS schedule
              FROM channel WHERE token = ? LIMIT 1`,
             [token],
         );

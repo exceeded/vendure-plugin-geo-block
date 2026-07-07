@@ -4,6 +4,57 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-07-07
+
+### Added
+- **Bot / crawler allowlist.** New plugin option `botAllowlist`, defaulting
+  to `'strict'` — matches every well-known SEO + social crawler
+  (Googlebot, Bingbot, DuckDuckBot, Baidu, Yandex, AppleBot, Slurp,
+  facebookexternalhit, Twitterbot, LinkedInBot, Slackbot, WhatsApp,
+  Discord, Telegram, Pinterest, Reddit + more). Ships crawler-safe
+  by default so restrictive geo rules don't silently drop search-engine
+  crawls and de-index the site. Also accepts `'permissive'` (any UA
+  self-identifying as bot / crawler / spider), `false` (no allowlist —
+  use only when a WAF handles bots upstream), or a custom pattern
+  array of strings + regexes. New audit decision `bot-allowlist`.
+- **Business-hours schedule.** New per-channel custom field
+  `geoBlockSchedule` — a JSON object with `timezone`, `days`, `from`,
+  `to`, and `outsideAction` (`block` / `soft` / `allow`). Recurring
+  weekly window per channel; outside the window the configured action
+  fires. Handles overnight windows and DST via `Intl.DateTimeFormat`.
+  New audit decision `schedule`. IP + bot allowlists still bypass so
+  ops and crawlers never see "closed for orders".
+- **Storefront drop-in helper JS** at `GET /geo-block/hulo-geo.js`.
+  One `<script src>` with `data-channel-token="…"` and the store gets
+  geo-blocking with zero custom code. Vanilla JS, no dependencies,
+  fails open on network error, ~2 KB minified. Optional attrs:
+  `data-redirect`, `data-timeout-ms`, `data-preview`. Cached
+  `public, max-age=300, stale-while-revalidate=1200` (configurable via
+  new plugin option `storefrontHelperMaxAgeSec`).
+- **Branded block page** at `GET /geo-block/blocked?t=…&reason=…`.
+  Self-contained HTML — inline CSS, no deps, HULO amber-on-navy
+  identity. Renders channel `blockLogoUrl`, message, optional
+  redirect CTA, and support email (new plugin option `supportEmail`).
+  Returns JSON when `Accept: application/json`. Rate-limited.
+- **HULO brand logo** shipped as `logo.svg` in the package root
+  (globe + amber block-slash on the navy HULO frame).
+
+### Changed
+- `/geo-block/check` now runs the bot allowlist and business-hours
+  schedule checks alongside the existing IP allowlist + maintenance
+  window checks. Precedence: IP allowlist → bot allowlist → schedule
+  → maintenance → country / region rules.
+- `loadChannelRow` now includes `geoBlockSchedule` and the previously-
+  missing `geoBlockAllowedSubdivisions` field, so subdivision rules
+  now round-trip correctly through the storefront `/check` path.
+
+### Fixed
+- Subdivision map (`geoBlockAllowedSubdivisions`) was defined as a
+  channel custom field but never read into the runtime config on
+  `/check` — the storefront verdict ignored it. Now honoured
+  end-to-end (on licensed installs — unlicensed still forces the
+  map to empty per the 0.4 tier gates).
+
 ## [0.6.0] — 2026-07-04
 
 ### Added
