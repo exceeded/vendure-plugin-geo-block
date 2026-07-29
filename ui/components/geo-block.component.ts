@@ -153,7 +153,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <div class="tabs">
                         <button class="tab" [class.active]="tab === 'rules'" (click)="tab = 'rules'">Rules</button>
                         <button class="tab" [class.active]="tab === 'message'" (click)="tab = 'message'">Block page</button>
-                        <button class="tab" [class.active]="tab === 'allowlist'" (click)="tab = 'allowlist'">IP allowlist</button>
+                        <button class="tab" [class.active]="tab === 'allowlist'" (click)="tab = 'allowlist'">IP allowlist<span class="tab-count" *ngIf="current.ipAllowlist.length">{{ current.ipAllowlist.length }}</span></button>
                         <button class="tab" [class.active]="tab === 'simulate'" (click)="tab = 'simulate'">Simulate</button>
                         <button class="tab" [class.active]="tab === 'stats'" (click)="tab = 'stats'; loadStats()">Stats</button>
                     </div>
@@ -502,7 +502,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
 
         <!-- ============================================================= SAVE BAR -->
         <vdr-page-block *ngIf="!loading && current && tab !== 'simulate' && tab !== 'stats'">
-            <div class="save-bar">
+            <div class="save-bar" [class.is-dirty]="dirty">
                 <button class="btn btn-primary" (click)="save()" [disabled]="saving">
                     {{ saving ? 'Saving…' : 'Save changes' }}
                 </button>
@@ -514,7 +514,35 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
     styles: [`
         :host { color: var(--color-text-100, inherit); display: block; }
 
-        /* ── HULO shared hero + help pattern ─────────────────────── */
+        /* ── Theme-adaptive semantic tokens ───────────────────────
+           Every success / warning / danger / info surface is DERIVED
+           from the admin theme variables with color-mix(), instead of
+           hardcoded pastel backgrounds. In light mode that yields the
+           familiar soft tints; in dark mode the same rules yield
+           dark-tinted surfaces with light text — no more light-text-
+           on-cream unreadables. Text always wears the theme ink; the
+           semantic hue lives in borders, rails and icons. */
+        :host {
+            --gb-surface: var(--color-component-bg-100, #ffffff);
+            --gb-ink: var(--color-text-100, #0f172a);
+            --gb-ok: #10b981;
+            --gb-warn: #f59e0b;
+            --gb-bad: #ef4444;
+            --gb-info: #3b82f6;
+            --gb-tint-ok:   color-mix(in srgb, var(--gb-ok) 13%, var(--gb-surface));
+            --gb-tint-warn: color-mix(in srgb, var(--gb-warn) 14%, var(--gb-surface));
+            --gb-tint-bad:  color-mix(in srgb, var(--gb-bad) 13%, var(--gb-surface));
+            --gb-tint-info: color-mix(in srgb, var(--gb-info) 13%, var(--gb-surface));
+            --gb-line-ok:   color-mix(in srgb, var(--gb-ok) 45%, transparent);
+            --gb-line-warn: color-mix(in srgb, var(--gb-warn) 50%, transparent);
+            --gb-line-bad:  color-mix(in srgb, var(--gb-bad) 45%, transparent);
+            --gb-line-info: color-mix(in srgb, var(--gb-info) 45%, transparent);
+            --gb-ink-ok:   color-mix(in srgb, var(--gb-ok) 45%, var(--gb-ink));
+            --gb-ink-warn: color-mix(in srgb, var(--gb-warn) 50%, var(--gb-ink));
+            --gb-ink-bad:  color-mix(in srgb, var(--gb-bad) 50%, var(--gb-ink));
+        }
+
+        /* ── HULO hero (deliberate dark brand island, both themes) ── */
         .hulo-hero {
             display: flex; align-items: center; gap: 18px;
             padding: 20px 22px; border-radius: 14px;
@@ -531,44 +559,43 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .hulo-hero-actions .btn { color: #f8fafc; }
         .hulo-hero-actions .btn:hover { color: #f59e0b; }
         .hulo-help-btn clr-icon { margin-right: 4px; }
+
+        /* ── Help drawer + first-run — theme-adaptive tints ──────── */
         .hulo-help-drawer {
-            background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px;
-            padding: 20px 22px; color: #451a03;
+            background: var(--gb-tint-warn); border: 1px solid var(--gb-line-warn);
+            border-radius: 12px; padding: 20px 22px; color: var(--gb-ink);
         }
         .hulo-help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-        .hulo-help-card { background: #ffffff; border-radius: 10px; padding: 16px; }
+        .hulo-help-card { background: var(--gb-surface); border-radius: 10px; padding: 16px; border: 1px solid var(--color-component-border-200, #e2e8f0); }
         .hulo-help-num {
             width: 24px; height: 24px; border-radius: 999px;
-            background: #f59e0b; color: #fff; font-weight: 700; font-size: 13px;
+            background: #f59e0b; color: #1a1205; font-weight: 800; font-size: 13px;
             display: grid; place-items: center; margin-bottom: 8px;
         }
-        .hulo-help-card h4 { margin: 0 0 4px; font-size: 14px; color: #0f172a; }
-        .hulo-help-card p { margin: 0; font-size: 13px; line-height: 1.5; color: #475569; }
-        .hulo-help-links { margin-top: 16px; padding-top: 14px; border-top: 1px solid #fde68a; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
-        .hulo-help-links a { color: #b45309; text-decoration: none; font-weight: 600; }
+        .hulo-help-card h4 { margin: 0 0 4px; font-size: 14px; color: var(--gb-ink); }
+        .hulo-help-card p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--color-component-color-200, #475569); }
+        .hulo-help-links { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--gb-line-warn); display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
+        .hulo-help-links a { color: var(--gb-ink-warn); text-decoration: none; font-weight: 600; }
         .hulo-help-links a:hover { text-decoration: underline; }
         .hulo-firstrun {
             display: flex; align-items: center; gap: 16px;
             padding: 20px 22px; border-radius: 12px;
-            background: #ecfdf5; border: 1px solid #a7f3d0; color: #064e3b;
+            background: var(--gb-tint-ok); border: 1px solid var(--gb-line-ok); color: var(--gb-ink);
         }
         .hulo-firstrun-emoji { font-size: 32px; line-height: 1; }
-        .hulo-firstrun h3 { margin: 0; font-size: 16px; color: #064e3b; }
-        .hulo-firstrun p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: #065f46; max-width: 640px; }
+        .hulo-firstrun h3 { margin: 0; font-size: 16px; color: var(--gb-ink); }
+        .hulo-firstrun p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--color-component-color-200, #475569); max-width: 640px; }
         .hulo-firstrun .btn { margin-left: auto; flex: 0 0 auto; }
 
         /* ── Unified card system ─────────────────────────────────── */
         .card {
-            background: var(--color-component-bg-100, #fff);
+            background: var(--gb-surface);
             border: 1px solid var(--color-component-border-200, #e2e8f0);
             border-radius: 12px; overflow: visible; min-width: 0;
         }
         .card + .card { margin-top: 16px; }
         .card-block { padding: 18px 20px; }
-        .step-title {
-            font-size: 15px; font-weight: 700; color: var(--color-text-100, #0f172a);
-            margin: 0 0 4px;
-        }
+        .step-title { font-size: 15px; font-weight: 700; color: var(--gb-ink); margin: 0 0 4px; }
         .step-title small { font-weight: 500; font-size: 12px; color: var(--color-component-color-300, #64748b); }
         .subsection-title {
             margin: 24px 0 8px; font-size: 11px; font-weight: 700;
@@ -578,7 +605,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .hint { font-size: 12px; color: var(--color-component-color-300, #64748b); margin: 2px 0 12px; }
         .hint.inline { display: inline; margin: 0; }
         .mono { font-family: ui-monospace, monospace; }
-        .warn { color: #b45309; }
+        .warn { color: var(--gb-ink-warn); }
 
         /* ── Top bar: channel + status + tabs ────────────────────── */
         .top-bar { border-left: 4px solid #f59e0b; }
@@ -590,57 +617,67 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .form-select, .form-input {
             padding: 7px 10px; border-radius: 6px;
             border: 1px solid var(--color-component-border-200, #d1d5db);
-            background: var(--color-component-bg-100, #fff);
-            color: var(--color-text-100, inherit); font-size: 13px;
+            background: var(--gb-surface);
+            color: var(--gb-ink); font-size: 13px;
         }
         .form-select { min-width: 180px; }
         .form-select:focus, .form-input:focus {
             outline: none; border-color: #f59e0b;
-            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+            box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 25%, transparent);
         }
         .status-pill {
             font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
             padding: 4px 10px; border-radius: 999px;
         }
-        .status-pill.on { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+        .status-pill.on { background: var(--gb-tint-ok); color: var(--gb-ink); border: 1px solid var(--gb-line-ok); }
         .status-pill.off { background: var(--color-component-bg-200, #f1f5f9); color: var(--color-component-color-300, #64748b); border: 1px solid var(--color-component-border-200, #e2e8f0); }
-        .mode-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
-        .mode-pill.mode-block { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-        .mode-pill.mode-soft { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-        .dirty-flag { font-size: 12px; font-weight: 700; color: #b45309; }
+        .mode-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: var(--gb-ink); }
+        .mode-pill.mode-block { background: var(--gb-tint-bad); border: 1px solid var(--gb-line-bad); }
+        .mode-pill.mode-soft { background: var(--gb-tint-warn); border: 1px solid var(--gb-line-warn); }
+        .dirty-flag { font-size: 12px; font-weight: 700; color: var(--gb-ink-warn); }
         .status-sentence {
             margin: 12px 0 0; padding: 10px 14px; border-radius: 8px;
-            font-size: 13px; line-height: 1.5;
-            background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;
+            font-size: 13px; line-height: 1.5; color: var(--gb-ink);
+            background: var(--gb-tint-ok); border: 1px solid var(--gb-line-ok);
+            border-left-width: 4px;
         }
         .status-sentence.status-off {
             background: var(--color-component-bg-200, #f8fafc);
             border-color: var(--color-component-border-200, #e2e8f0);
             color: var(--color-component-color-200, #475569);
         }
-        .status-sentence.status-danger { background: #fef2f2; border-color: #fecaca; color: #b91c1c; font-weight: 600; }
+        .status-sentence.status-danger {
+            background: var(--gb-tint-bad); border-color: var(--gb-line-bad);
+            color: var(--gb-ink); font-weight: 600;
+        }
         .tabs { display: flex; gap: 4px; margin-top: 14px; flex-wrap: wrap; border-top: 1px solid var(--color-component-border-100, #f1f5f9); padding-top: 12px; }
         .tab {
+            display: inline-flex; align-items: center; gap: 6px;
             padding: 7px 14px; min-height: 34px; border-radius: 999px;
             border: 1px solid transparent; background: none; cursor: pointer;
             font-size: 13px; font-weight: 600;
             color: var(--color-component-color-300, #64748b);
         }
-        .tab:hover { color: var(--color-text-100, #0f172a); background: var(--color-component-bg-200, #f8fafc); }
-        .tab.active { background: #0f1419; color: #fff; }
+        .tab:hover { color: var(--gb-ink); background: var(--color-component-bg-200, #f8fafc); }
+        .tab.active { background: #f59e0b; color: #1a1205; }
+        .tab-count {
+            font-size: 10px; font-weight: 800; min-width: 16px; height: 16px;
+            padding: 0 4px; border-radius: 999px; display: inline-grid; place-items: center;
+            background: color-mix(in srgb, currentColor 18%, transparent);
+        }
 
         /* ── Selectable cards (mode / strategy / presets) ────────── */
         .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 8px; }
         .mode-card {
             display: block; padding: 14px 16px; border-radius: 10px; cursor: pointer;
             border: 1px solid var(--color-component-border-200, #e2e8f0);
-            background: var(--color-component-bg-100, #fff);
+            background: var(--gb-surface);
             transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
         .mode-card:hover { border-color: #f59e0b; }
-        .mode-card.active { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+        .mode-card.active { border-color: #f59e0b; box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 25%, transparent); }
         .mode-card input { margin-right: 6px; accent-color: #b45309; }
-        .mode-title { font-size: 13px; font-weight: 700; color: var(--color-text-100, #0f172a); display: inline; }
+        .mode-title { font-size: 13px; font-weight: 700; color: var(--gb-ink); display: inline; }
         .mode-body { margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--color-component-color-300, #64748b); }
         .preset-section { margin-bottom: 14px; }
         .group-title {
@@ -652,13 +689,13 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .preset-card {
             display: block; padding: 10px 12px; border-radius: 8px; cursor: pointer;
             border: 1px solid var(--color-component-border-200, #e2e8f0);
-            background: var(--color-component-bg-100, #fff);
-            transition: border-color 0.15s ease;
+            background: var(--gb-surface);
+            transition: border-color 0.15s ease, background 0.15s ease;
         }
         .preset-card:hover { border-color: #f59e0b; }
-        .preset-card.active { border-color: #f59e0b; background: #fffbeb; }
+        .preset-card.active { border-color: #f59e0b; background: var(--gb-tint-warn); }
         .preset-card input { margin-right: 6px; accent-color: #b45309; }
-        .preset-label { display: inline; font-size: 13px; font-weight: 600; color: var(--color-text-100, #0f172a); }
+        .preset-label { display: inline; font-size: 13px; font-weight: 600; color: var(--gb-ink); }
         .preset-hint { margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--color-component-color-300, #64748b); }
         .filter-input { width: 100%; max-width: 320px; margin-bottom: 12px; }
 
@@ -669,13 +706,13 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
             padding: 4px 8px 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
             background: var(--color-component-bg-200, #f1f5f9);
             border: 1px solid var(--color-component-border-200, #e2e8f0);
-            color: var(--color-text-100, #0f172a);
+            color: var(--gb-ink);
         }
         .chip-x {
             background: none; border: 0; cursor: pointer; font-size: 14px; line-height: 1;
             padding: 0 2px; color: var(--color-component-color-300, #64748b);
         }
-        .chip-x:hover { color: #b91c1c; }
+        .chip-x:hover { color: var(--gb-bad); }
         .picker { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .form-row { margin-bottom: 16px; }
         .form-row label { display: block; font-size: 12px; font-weight: 700; color: var(--color-component-color-200, #475569); margin-bottom: 4px; }
@@ -684,31 +721,38 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .form-row textarea.form-input { max-width: 100%; }
 
         /* ── Resolved preview / what-it-means banners ────────────── */
-        .preview-banner { border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; line-height: 1.5; }
-        .preview-off { background: var(--color-component-bg-200, #f8fafc); border: 1px solid var(--color-component-border-200, #e2e8f0); color: var(--color-component-color-200, #475569); }
-        .preview-allow { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
-        .preview-block { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .preview-banner {
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
+            font-size: 13px; line-height: 1.5; color: var(--gb-ink);
+            border: 1px solid; border-left-width: 4px;
+        }
+        .preview-off { background: var(--color-component-bg-200, #f8fafc); border-color: var(--color-component-border-200, #e2e8f0); color: var(--color-component-color-200, #475569); }
+        .preview-allow { background: var(--gb-tint-ok); border-color: var(--gb-line-ok); }
+        .preview-block { background: var(--gb-tint-bad); border-color: var(--gb-line-bad); }
         .country-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
         .mini-chip {
             font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
-            background: rgba(255,255,255,0.7); border: 1px solid #a7f3d0; color: #047857;
-            font-family: ui-monospace, monospace;
+            background: var(--gb-surface); border: 1px solid var(--gb-line-ok);
+            color: var(--gb-ink); font-family: ui-monospace, monospace;
         }
-        .mini-chip.blocked { border-color: #fecaca; color: #b91c1c; }
+        .mini-chip.blocked { border-color: var(--gb-line-bad); }
 
         /* ── Simulate ────────────────────────────────────────────── */
         .sim-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
         .sim-grid label { display: block; font-size: 12px; font-weight: 700; color: var(--color-component-color-200, #475569); margin-bottom: 4px; }
         .sim-grid .form-input { width: 100%; }
         .sim-result { margin-top: 16px; }
-        .sim-banner { border-radius: 8px; padding: 12px 14px; font-size: 13px; }
-        .sim-banner.allow { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
-        .sim-banner.deny { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .sim-banner {
+            border-radius: 8px; padding: 12px 14px; font-size: 13px;
+            color: var(--gb-ink); border: 1px solid; border-left-width: 4px;
+        }
+        .sim-banner.allow { background: var(--gb-tint-ok); border-color: var(--gb-line-ok); }
+        .sim-banner.deny { background: var(--gb-tint-bad); border-color: var(--gb-line-bad); }
 
-        /* ── Stats KPI tiles + table (shared system) ─────────────── */
+        /* ── Stats KPI tiles + table ─────────────────────────────── */
         .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
         .kpi {
-            background: var(--color-component-bg-100, #fff);
+            background: var(--gb-surface);
             border: 1px solid var(--color-component-border-200, #e2e8f0);
             border-radius: 12px; padding: 16px 18px; min-width: 0;
         }
@@ -718,7 +762,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         }
         .kpi-num {
             margin-top: 6px; font-size: 26px; font-weight: 700; line-height: 1.1;
-            color: var(--color-text-100, #0f172a);
+            color: var(--gb-ink);
             font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
         }
         .kpi-sub { margin-top: 4px; font-size: 12px; color: var(--color-component-color-300, #64748b); }
@@ -728,7 +772,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
             text-transform: uppercase; color: var(--color-component-color-300, #64748b);
             padding: 8px 10px; border-bottom: 1px solid var(--color-component-border-200, #e2e8f0);
         }
-        .table td { padding: 9px 10px; border-bottom: 1px solid var(--color-component-border-100, #f1f5f9); }
+        .table td { padding: 9px 10px; border-bottom: 1px solid var(--color-component-border-100, #f1f5f9); color: var(--gb-ink); }
         .table tbody tr:hover { background: var(--color-component-bg-200, #f8fafc); }
         .table .num-col { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .table th.num-col { text-align: right; }
@@ -739,19 +783,27 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         }
         .mini-fill { display: block; height: 100%; background: #f59e0b; border-radius: 999px; }
 
-        /* ── Save bar + banners ──────────────────────────────────── */
+        /* ── Save bar — quiet until there's something to save ────── */
         .save-bar {
             display: flex; align-items: center; gap: 12px;
             padding: 14px 18px; border-radius: 12px;
-            background: var(--color-component-bg-100, #fff);
+            background: var(--gb-surface);
             border: 1px solid var(--color-component-border-200, #e2e8f0);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
+        .save-bar.is-dirty {
+            border-color: var(--gb-line-warn);
+            border-left: 4px solid #f59e0b;
+            box-shadow: 0 4px 16px color-mix(in srgb, #f59e0b 18%, transparent);
+        }
+
+        /* ── Update banner ───────────────────────────────────────── */
         .update-banner {
             display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
-            padding: 12px 16px; border-radius: 10px; font-size: 13px;
-            background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;
+            padding: 12px 16px; border-radius: 10px; font-size: 13px; color: var(--gb-ink);
+            background: var(--gb-tint-info); border: 1px solid var(--gb-line-info);
         }
-        .update-banner.major { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+        .update-banner.major { background: var(--gb-tint-warn); border-color: var(--gb-line-warn); }
         .major-pill { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: #b45309; color: #fff; margin-left: 6px; }
         .update-banner .actions { display: flex; gap: 6px; align-items: center; }
 
