@@ -142,6 +142,14 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                         <span class="dirty-flag" *ngIf="dirty">● Unsaved</span>
                     </div>
 
+                    <!-- Plain-English readout of what the current rules
+                         actually DO — recomputed live as the operator
+                         edits, so "what does this mean?" is always
+                         answered before anything is saved. -->
+                    <p class="status-sentence" [class.status-off]="!current.enabled" [class.status-danger]="isLockout()">
+                        {{ statusSentence() }}
+                    </p>
+
                     <div class="tabs">
                         <button class="tab" [class.active]="tab === 'rules'" (click)="tab = 'rules'">Rules</button>
                         <button class="tab" [class.active]="tab === 'message'" (click)="tab = 'message'">Block page</button>
@@ -438,32 +446,39 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
 
                         <div *ngIf="!stats" class="hint">Loading…</div>
                         <div *ngIf="stats">
-                            <div class="stats-grid">
-                                <div class="stat-card">
-                                    <div class="num">{{ stats.totals.blocked || 0 }}</div>
-                                    <div class="lbl">Full blocks</div>
+                            <div class="kpi-row">
+                                <div class="kpi">
+                                    <div class="kpi-label">Full blocks</div>
+                                    <div class="kpi-num">{{ stats.totals.blocked || 0 }}</div>
+                                    <div class="kpi-sub">visitors turned away</div>
                                 </div>
-                                <div class="stat-card">
-                                    <div class="num">{{ stats.totals.softBlocked || 0 }}</div>
-                                    <div class="lbl">Soft blocks</div>
+                                <div class="kpi">
+                                    <div class="kpi-label">Soft blocks</div>
+                                    <div class="kpi-num">{{ stats.totals.softBlocked || 0 }}</div>
+                                    <div class="kpi-sub">saw the banner, could browse</div>
                                 </div>
-                                <div class="stat-card">
-                                    <div class="num">{{ stats.totals.total || 0 }}</div>
-                                    <div class="lbl">Total events</div>
+                                <div class="kpi">
+                                    <div class="kpi-label">Total events</div>
+                                    <div class="kpi-num">{{ stats.totals.total || 0 }}</div>
+                                    <div class="kpi-sub">all geo decisions logged</div>
                                 </div>
-                                <div class="stat-card">
-                                    <div class="num">{{ stats.totals.uniqueIps || 0 }}</div>
-                                    <div class="lbl">Unique IPs</div>
+                                <div class="kpi">
+                                    <div class="kpi-label">Unique IPs</div>
+                                    <div class="kpi-num">{{ stats.totals.uniqueIps || 0 }}</div>
+                                    <div class="kpi-sub">distinct blocked addresses</div>
                                 </div>
                             </div>
 
-                            <h4 style="margin-top: 24px">Top blocked countries</h4>
-                            <table class="table table-compact" *ngIf="stats.topCountries?.length">
-                                <thead><tr><th>Country</th><th style="width: 100px">Blocked</th></tr></thead>
+                            <h4 class="subsection-title">Top blocked countries</h4>
+                            <table class="table" *ngIf="stats.topCountries?.length">
+                                <thead><tr><th>Country</th><th class="num-col" style="width: 140px">Blocked</th></tr></thead>
                                 <tbody>
                                     <tr *ngFor="let r of stats.topCountries">
-                                        <td>{{ r.country || '—' }}</td>
-                                        <td>{{ r.n }}</td>
+                                        <td>
+                                            {{ r.country || '—' }}
+                                            <span class="mini-track"><span class="mini-fill" [style.width.%]="statPct(r.n)"></span></span>
+                                        </td>
+                                        <td class="num-col">{{ r.n | number }}</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -498,13 +513,8 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
     `,
     styles: [`
         :host { color: var(--color-text-100, inherit); display: block; }
-        .subtitle { font-size: 13px; color: var(--color-component-color-300); margin: 2px 0 0; }
 
-        /* ── HULO shared hero + help pattern ─────────────────────────
-           Same block across every HULO plugin so the operator sees
-           a consistent brand + help affordance. Colour vars fall back
-           through Clarity to hard-coded amber/navy for admin themes
-           that don't set them. */
+        /* ── HULO shared hero + help pattern ─────────────────────── */
         .hulo-hero {
             display: flex; align-items: center; gap: 18px;
             padding: 20px 22px; border-radius: 14px;
@@ -546,192 +556,211 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .hulo-firstrun h3 { margin: 0; font-size: 16px; color: #064e3b; }
         .hulo-firstrun p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: #065f46; max-width: 640px; }
         .hulo-firstrun .btn { margin-left: auto; flex: 0 0 auto; }
+
+        /* ── Unified card system ─────────────────────────────────── */
+        .card {
+            background: var(--color-component-bg-100, #fff);
+            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            border-radius: 12px; overflow: visible; min-width: 0;
+        }
+        .card + .card { margin-top: 16px; }
+        .card-block { padding: 18px 20px; }
+        .step-title {
+            font-size: 15px; font-weight: 700; color: var(--color-text-100, #0f172a);
+            margin: 0 0 4px;
+        }
+        .step-title small { font-weight: 500; font-size: 12px; color: var(--color-component-color-300, #64748b); }
+        .subsection-title {
+            margin: 24px 0 8px; font-size: 11px; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--color-component-color-300, #64748b);
+        }
+        .hint { font-size: 12px; color: var(--color-component-color-300, #64748b); margin: 2px 0 12px; }
+        .hint.inline { display: inline; margin: 0; }
+        .mono { font-family: ui-monospace, monospace; }
+        .warn { color: #b45309; }
+
+        /* ── Top bar: channel + status + tabs ────────────────────── */
+        .top-bar { border-left: 4px solid #f59e0b; }
+        .chan-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .lbl {
+            font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--color-component-color-300, #64748b);
+        }
+        .form-select, .form-input {
+            padding: 7px 10px; border-radius: 6px;
+            border: 1px solid var(--color-component-border-200, #d1d5db);
+            background: var(--color-component-bg-100, #fff);
+            color: var(--color-text-100, inherit); font-size: 13px;
+        }
+        .form-select { min-width: 180px; }
+        .form-select:focus, .form-input:focus {
+            outline: none; border-color: #f59e0b;
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+        }
+        .status-pill {
+            font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+            padding: 4px 10px; border-radius: 999px;
+        }
+        .status-pill.on { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+        .status-pill.off { background: var(--color-component-bg-200, #f1f5f9); color: var(--color-component-color-300, #64748b); border: 1px solid var(--color-component-border-200, #e2e8f0); }
+        .mode-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+        .mode-pill.mode-block { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .mode-pill.mode-soft { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+        .dirty-flag { font-size: 12px; font-weight: 700; color: #b45309; }
+        .status-sentence {
+            margin: 12px 0 0; padding: 10px 14px; border-radius: 8px;
+            font-size: 13px; line-height: 1.5;
+            background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;
+        }
+        .status-sentence.status-off {
+            background: var(--color-component-bg-200, #f8fafc);
+            border-color: var(--color-component-border-200, #e2e8f0);
+            color: var(--color-component-color-200, #475569);
+        }
+        .status-sentence.status-danger { background: #fef2f2; border-color: #fecaca; color: #b91c1c; font-weight: 600; }
+        .tabs { display: flex; gap: 4px; margin-top: 14px; flex-wrap: wrap; border-top: 1px solid var(--color-component-border-100, #f1f5f9); padding-top: 12px; }
+        .tab {
+            padding: 7px 14px; min-height: 34px; border-radius: 999px;
+            border: 1px solid transparent; background: none; cursor: pointer;
+            font-size: 13px; font-weight: 600;
+            color: var(--color-component-color-300, #64748b);
+        }
+        .tab:hover { color: var(--color-text-100, #0f172a); background: var(--color-component-bg-200, #f8fafc); }
+        .tab.active { background: #0f1419; color: #fff; }
+
+        /* ── Selectable cards (mode / strategy / presets) ────────── */
+        .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 8px; }
+        .mode-card {
+            display: block; padding: 14px 16px; border-radius: 10px; cursor: pointer;
+            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            background: var(--color-component-bg-100, #fff);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .mode-card:hover { border-color: #f59e0b; }
+        .mode-card.active { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+        .mode-card input { margin-right: 6px; accent-color: #b45309; }
+        .mode-title { font-size: 13px; font-weight: 700; color: var(--color-text-100, #0f172a); display: inline; }
+        .mode-body { margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--color-component-color-300, #64748b); }
+        .preset-section { margin-bottom: 14px; }
+        .group-title {
+            margin: 0 0 8px; font-size: 11px; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--color-component-color-300, #64748b);
+        }
+        .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+        .preset-card {
+            display: block; padding: 10px 12px; border-radius: 8px; cursor: pointer;
+            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            background: var(--color-component-bg-100, #fff);
+            transition: border-color 0.15s ease;
+        }
+        .preset-card:hover { border-color: #f59e0b; }
+        .preset-card.active { border-color: #f59e0b; background: #fffbeb; }
+        .preset-card input { margin-right: 6px; accent-color: #b45309; }
+        .preset-label { display: inline; font-size: 13px; font-weight: 600; color: var(--color-text-100, #0f172a); }
+        .preset-hint { margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--color-component-color-300, #64748b); }
+        .filter-input { width: 100%; max-width: 320px; margin-bottom: 12px; }
+
+        /* ── Chips + pickers ─────────────────────────────────────── */
+        .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; min-height: 30px; align-items: center; }
+        .chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 4px 8px 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+            background: var(--color-component-bg-200, #f1f5f9);
+            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            color: var(--color-text-100, #0f172a);
+        }
+        .chip-x {
+            background: none; border: 0; cursor: pointer; font-size: 14px; line-height: 1;
+            padding: 0 2px; color: var(--color-component-color-300, #64748b);
+        }
+        .chip-x:hover { color: #b91c1c; }
+        .picker { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .form-row { margin-bottom: 16px; }
+        .form-row label { display: block; font-size: 12px; font-weight: 700; color: var(--color-component-color-200, #475569); margin-bottom: 4px; }
+        .form-row label small { font-weight: 500; color: var(--color-component-color-300, #64748b); }
+        .form-row .form-input { width: 100%; max-width: 560px; }
+        .form-row textarea.form-input { max-width: 100%; }
+
+        /* ── Resolved preview / what-it-means banners ────────────── */
+        .preview-banner { border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; line-height: 1.5; }
+        .preview-off { background: var(--color-component-bg-200, #f8fafc); border: 1px solid var(--color-component-border-200, #e2e8f0); color: var(--color-component-color-200, #475569); }
+        .preview-allow { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+        .preview-block { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .country-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+        .mini-chip {
+            font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+            background: rgba(255,255,255,0.7); border: 1px solid #a7f3d0; color: #047857;
+            font-family: ui-monospace, monospace;
+        }
+        .mini-chip.blocked { border-color: #fecaca; color: #b91c1c; }
+
+        /* ── Simulate ────────────────────────────────────────────── */
+        .sim-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+        .sim-grid label { display: block; font-size: 12px; font-weight: 700; color: var(--color-component-color-200, #475569); margin-bottom: 4px; }
+        .sim-grid .form-input { width: 100%; }
+        .sim-result { margin-top: 16px; }
+        .sim-banner { border-radius: 8px; padding: 12px 14px; font-size: 13px; }
+        .sim-banner.allow { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+        .sim-banner.deny { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+
+        /* ── Stats KPI tiles + table (shared system) ─────────────── */
+        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+        .kpi {
+            background: var(--color-component-bg-100, #fff);
+            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            border-radius: 12px; padding: 16px 18px; min-width: 0;
+        }
+        .kpi-label {
+            font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--color-component-color-300, #64748b);
+        }
+        .kpi-num {
+            margin-top: 6px; font-size: 26px; font-weight: 700; line-height: 1.1;
+            color: var(--color-text-100, #0f172a);
+            font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+        }
+        .kpi-sub { margin-top: 4px; font-size: 12px; color: var(--color-component-color-300, #64748b); }
+        .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .table th {
+            text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+            text-transform: uppercase; color: var(--color-component-color-300, #64748b);
+            padding: 8px 10px; border-bottom: 1px solid var(--color-component-border-200, #e2e8f0);
+        }
+        .table td { padding: 9px 10px; border-bottom: 1px solid var(--color-component-border-100, #f1f5f9); }
+        .table tbody tr:hover { background: var(--color-component-bg-200, #f8fafc); }
+        .table .num-col { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .table th.num-col { text-align: right; }
+        .mini-track {
+            display: block; height: 6px; margin-top: 5px; max-width: 240px;
+            background: var(--color-component-bg-200, #f1f5f9);
+            border-radius: 999px; overflow: hidden;
+        }
+        .mini-fill { display: block; height: 100%; background: #f59e0b; border-radius: 999px; }
+
+        /* ── Save bar + banners ──────────────────────────────────── */
+        .save-bar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 18px; border-radius: 12px;
+            background: var(--color-component-bg-100, #fff);
+            border: 1px solid var(--color-component-border-200, #e2e8f0);
+        }
+        .update-banner {
+            display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+            padding: 12px 16px; border-radius: 10px; font-size: 13px;
+            background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;
+        }
+        .update-banner.major { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+        .major-pill { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: #b45309; color: #fff; margin-left: 6px; }
+        .update-banner .actions { display: flex; gap: 6px; align-items: center; }
+
         @media (max-width: 640px) {
             .hulo-hero { flex-wrap: wrap; }
             .hulo-hero-actions { width: 100%; justify-content: flex-end; }
             .hulo-firstrun { flex-wrap: wrap; }
             .hulo-firstrun .btn { margin-left: 0; margin-top: 8px; width: 100%; }
-        }
-
-        .top-bar { border-top: 3px solid var(--color-primary-500, #1d4ed8); }
-        .chan-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-        .lbl { font-size: 12px; color: var(--color-component-color-300); }
-        .form-select, .form-input {
-            padding: 6px 10px; border-radius: 4px; min-width: 180px;
-            border: 1px solid var(--color-component-border-200);
-            background: var(--color-component-bg-100);
-            color: var(--color-text-100, inherit);
-        }
-        .form-input.mono { font-family: var(--clr-font-family-monospace, monospace); }
-        .filter-input { width: 100%; max-width: 360px; margin-bottom: 12px; }
-        textarea.form-input { font-family: inherit; min-height: 80px; width: 100%; max-width: 600px; }
-        .form-row { margin: 12px 0; }
-        .form-row label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
-        .form-row label small { color: var(--color-component-color-300); font-weight: 400; margin-left: 4px; }
-
-        .status-pill {
-            display: inline-block; padding: 3px 12px; border-radius: 12px;
-            font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
-        }
-        .status-pill.on { background: #10b981; color: #fff; }
-        .status-pill.off { background: var(--color-component-bg-200); color: var(--color-component-color-300); }
-        .mode-pill {
-            display: inline-block; padding: 3px 10px; border-radius: 10px;
-            font-size: 11px; font-weight: 600;
-        }
-        .mode-pill.mode-block { background: #fee2e2; color: #991b1b; }
-        .mode-pill.mode-soft { background: #fef3c7; color: #92400e; }
-        .dirty-flag { color: #f59e0b; font-weight: 600; font-size: 12px; }
-
-        .tabs { display: flex; gap: 4px; margin-top: 16px; border-bottom: 1px solid var(--color-component-border-200); }
-        .tab {
-            padding: 8px 16px;
-            background: transparent; border: 0; border-bottom: 2px solid transparent;
-            font-size: 13px; font-weight: 500;
-            color: var(--color-component-color-300); cursor: pointer;
-            margin-bottom: -1px;
-        }
-        .tab:hover { color: var(--color-text-100); }
-        .tab.active { border-bottom-color: var(--color-primary-500, #1d4ed8); color: var(--color-text-100); font-weight: 600; }
-
-        .hint { font-size: 13px; color: var(--color-component-color-300); margin: 6px 0 12px; }
-        .hint.inline { display: inline; margin: 0; }
-
-        .step-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-        .step-title small { color: var(--color-component-color-300); font-weight: 400; margin-left: 6px; }
-        .group-title { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-component-color-300); margin: 14px 0 8px; }
-
-        .mode-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-        .mode-card {
-            display: block; padding: 16px;
-            border: 2px solid var(--color-component-border-200);
-            border-radius: 8px; cursor: pointer;
-            background: var(--color-component-bg-100);
-            transition: border-color .15s;
-        }
-        .mode-card.active { border-color: var(--color-primary-500, #1d4ed8); }
-        .mode-card input { margin-right: 8px; }
-        .mode-card .mode-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-        .mode-card .mode-body { font-size: 12px; color: var(--color-component-color-300); line-height: 1.5; }
-
-        .preset-section { margin-top: 8px; }
-        .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-        .preset-card {
-            display: block; padding: 12px;
-            border: 1px solid var(--color-component-border-200);
-            border-radius: 6px; cursor: pointer;
-            background: var(--color-component-bg-100);
-        }
-        .preset-card.active { border-color: var(--color-primary-500, #1d4ed8); background: var(--color-component-bg-200); }
-        .preset-card input { float: right; }
-        .preset-label { font-weight: 600; font-size: 13px; }
-        .preset-hint { font-size: 11px; color: var(--color-component-color-300); margin-top: 4px; line-height: 1.4; }
-
-        .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; min-height: 30px; }
-        .chip {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 4px 10px; border-radius: 14px;
-            background: #dbeafe; color: #1e3a8a; font-size: 12px;
-            border: 1px solid #93c5fd;
-        }
-        .chip.blocked { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-        .chip.mono { font-family: var(--clr-font-family-monospace, monospace); background: var(--color-component-bg-200); color: var(--color-text-100); border-color: var(--color-component-border-200); }
-        .chip-x {
-            background: transparent; border: none; cursor: pointer; padding: 0 0 0 2px;
-            color: inherit; font-size: 16px; line-height: 1;
-        }
-        .picker { display: flex; gap: 8px; align-items: center; }
-
-        .uk-row { display: flex; gap: 8px; flex-wrap: wrap; }
-        .uk-pill {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 6px 14px; border-radius: 18px; cursor: pointer;
-            border: 1px solid var(--color-component-border-200);
-            background: var(--color-component-bg-100);
-            font-size: 13px;
-        }
-        .uk-pill.active { border-color: var(--color-primary-500, #1d4ed8); background: #dbeafe; color: #1e3a8a; }
-
-        .preview-card { border-left: 4px solid var(--color-primary-500, #1d4ed8); }
-        .preview-banner {
-            padding: 12px; border-radius: 6px; margin: 10px 0;
-            background: var(--color-component-bg-200);
-        }
-        .preview-banner .warn { color: #ef4444; }
-        .preview-banner .country-chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
-        .mini-chip {
-            display: inline-block; padding: 2px 6px; border-radius: 4px;
-            background: var(--color-component-bg-100); font-size: 11px;
-            border: 1px solid var(--color-component-border-200);
-            font-family: var(--clr-font-family-monospace, monospace);
-        }
-        .mini-chip.blocked { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-
-        .sim-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0 16px; max-width: 700px; }
-        .sim-result { margin-top: 16px; }
-        .sim-banner { padding: 12px 16px; border-radius: 6px; font-size: 14px; }
-        .sim-banner.allow { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
-        .sim-banner.deny { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-        .stat-card {
-            padding: 14px 18px;
-            border: 1px solid var(--color-component-border-200);
-            border-radius: 6px;
-            background: var(--color-component-bg-100);
-        }
-        .stat-card .num { font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--color-primary-500, #1d4ed8); }
-        .stat-card .lbl { font-size: 11px; color: var(--color-component-color-300); margin-top: 2px; }
-
-        .save-bar { display: flex; gap: 8px; align-items: center; padding: 12px; background: var(--color-component-bg-100); border: 1px solid var(--color-component-border-200); border-radius: 6px; }
-
-        .update-banner {
-            display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
-            padding: 12px 16px; border-radius: 8px;
-            background: #ecfeff; border: 1px solid #67e8f9;
-            color: #155e75; font-size: 13px;
-        }
-        .update-banner.major { background: #fef3c7; border-color: #fde68a; color: #92400e; }
-        .update-banner strong { font-weight: 700; }
-        .update-banner .major-pill { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 8px; background: #f59e0b; color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-        .update-banner .actions { display: flex; gap: 8px; align-items: center; }
-
-        /* Mobile-friendly layout under 768px */
-        @media (max-width: 767px) {
-            /* 44px tap targets on every interactive element in our component */
-            :host button, :host .btn { min-height: 40px; }
-            :host vdr-action-bar { flex-wrap: wrap; gap: 6px; }
-            :host vdr-action-bar button { min-height: 40px; padding: 6px 12px; }
-            .save-bar button { min-height: 48px; font-size: 15px; }
-            .preset-card { min-height: 44px; padding: 14px 12px; }
-            .uk-pill { min-height: 40px; padding: 8px 16px; }
-            .chip { min-height: 32px; padding: 6px 12px; }
-            .chip-x { min-width: 24px; min-height: 24px; display: inline-grid; place-items: center; padding: 0; }
-            .chan-row { flex-direction: column; align-items: stretch; gap: 10px; }
-            .chan-row .form-select { width: 100%; min-width: 0; }
-            .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; white-space: nowrap; }
-            .tabs::-webkit-scrollbar { height: 4px; }
-            .tab { flex-shrink: 0; padding: 10px 14px; min-height: 44px; }
-            .mode-grid { grid-template-columns: 1fr; }
-            .preset-grid { grid-template-columns: 1fr; }
-            .picker { flex-direction: column; align-items: stretch; }
-            .picker .form-input { width: 100%; min-width: 0; }
-            .picker .btn { width: 100%; }
-            .sim-grid { grid-template-columns: 1fr; max-width: 100%; }
-            .stats-grid { grid-template-columns: 1fr 1fr; }
-            .filter-input { max-width: 100%; }
-            textarea.form-input { max-width: 100%; }
-            .save-bar { flex-direction: column; align-items: stretch; gap: 8px; }
-            .save-bar button { width: 100%; min-height: 44px; }
-            table { font-size: 12px; }
-            .update-banner { flex-direction: column; align-items: flex-start; }
-            .update-banner .actions { width: 100%; justify-content: flex-end; }
-            .form-row label { font-size: 14px; }
-        }
-        @media (max-width: 360px) {
-            .stats-grid { grid-template-columns: 1fr; }
-            .uk-row { flex-direction: column; }
-            .uk-pill { width: 100%; justify-content: center; }
+            .form-select { min-width: 0; flex: 1; }
         }
     `],
 })
@@ -1065,6 +1094,50 @@ export class GeoBlockComponent implements OnInit {
 
     /** Local preview — uses the server-resolved allowed list when no
      *  rule changes are pending. Best-effort otherwise. */
+
+    /** True when the rules would block EVERY visitor — the state an
+     *  operator most needs shouting about before they hit save. */
+    isLockout(): boolean {
+        if (!this.current?.enabled) return false;
+        const allowed = this.resolvedAllowed();
+        return allowed !== null && allowed.length === 0;
+    }
+
+    /** One plain-English sentence describing what the current
+     *  configuration actually does. Recomputed live while editing. */
+    statusSentence(): string {
+        const c = this.current;
+        if (!c) return '';
+        if (!c.enabled) {
+            return 'Geo-block is off — every visitor can browse and buy on this channel.';
+        }
+        const allowed = this.resolvedAllowed();
+        const modeTxt = c.mode === 'soft'
+            ? 'others can browse but see a "we don\u2019t ship here" banner'
+            : 'others see a block page';
+        const bypass = c.ipAllowlist?.length
+            ? ` ${c.ipAllowlist.length} IP${c.ipAllowlist.length === 1 ? '' : 's'} always bypass the rules.`
+            : '';
+        if (this.isLockout()) {
+            return '\u26A0\uFE0F Nothing is allowed \u2014 every visitor will be blocked. Add a region or country before saving.';
+        }
+        if (allowed === null) {
+            const blocked = c.blockedCountries?.length
+                ? `, except visitors from ${c.blockedCountries.join(', ')} who are always blocked`
+                : '';
+            return `On \u2014 visitors from anywhere are allowed${blocked}.${bypass}`;
+        }
+        const preview = allowed.slice(0, 4).join(', ');
+        const more = allowed.length > 4 ? ` +${allowed.length - 4} more` : '';
+        return `On \u2014 only visitors from ${allowed.length} ${allowed.length === 1 ? 'country' : 'countries'} (${preview}${more}) can use this store; ${modeTxt}.${bypass}`;
+    }
+
+    /** Width for the top-blocked-countries mini bars. */
+    statPct(n: number): number {
+        const max = Math.max(1, ...((this.stats?.topCountries || []).map((r: any) => Number(r.n) || 0)));
+        return Math.max(2, (Number(n) / max) * 100);
+    }
+
     resolvedAllowed(): string[] | null {
         if (!this.current) return [];
         if (this.current.allowedRegions.includes('WORLDWIDE')) return null;
