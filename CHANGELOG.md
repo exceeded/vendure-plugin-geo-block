@@ -4,6 +4,57 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] — 2026-07-30
+
+### Fixed
+- **Buttons rendered unstyled in the admin.** The page borrowed Clarity
+  button classes (`btn btn-secondary` etc.) from the admin shell, but the
+  built admin CSS defines `.btn` only contextually and `.btn-secondary`
+  not at all — "+ Add" and friends rendered as bare native buttons.
+  Every control is now styled by the component itself (`.gbtn` system).
+- **Unreadable muted text.** Secondary text leaned on
+  `--color-component-color-200/300`, which the admin never defines, so
+  hardcoded slate fallbacks applied in both themes — unreadable on dark
+  surfaces. Replaced by per-theme ink tokens.
+- **Invisible control boundaries.** The admin border tokens fail
+  WCAG 1.4.11 in both themes (light `#bfc3cc` ≈ 1.7:1; dark border-200 is
+  *darker than the surface*, 1.01:1). Inputs/buttons/switch now use a
+  dedicated `--gb-ui-border` at ≥ 3:1 per theme.
+
+### Added
+- **Accessibility, verified not assumed.** `scripts/contrast-check.py`
+  simulates the shipped `color-mix()` tokens against the real admin
+  theme values and checks every text/surface pair — 40/40 WCAG AA pass
+  (≥ 4.5:1 text, ≥ 3:1 UI boundaries) in light and dark.
+- **Enforcement toggle switch** (`role="switch"`, keyboard + focus ring)
+  replaces the ON/OFF pill + button pair.
+- **ARIA tabs** (`role="tablist"`/`tab`, `aria-selected`), labelled chip
+  remove buttons, `aria-expanded` on collapsibles, `:focus-visible`
+  rings on every control, `prefers-reduced-motion` support.
+- **Sticky save bar** — stays in view, shows "Unsaved changes" with an
+  amber accent when dirty, and disables Save/Discard when clean.
+
+## [0.7.3] — 2026-07-29
+
+### Fixed
+- **Dark mode.** All semantic surfaces (success/warning/danger/info
+  tints) are derived from the live theme variables with `color-mix()`
+  instead of hardcoded light-mode pastels, which produced light-text-on-
+  cream unreadables in the dark theme (worst: selected preset cards).
+
+### Changed
+- Active tab restyled to brand amber; IP allowlist tab shows a bypass-IP
+  count badge; save bar highlights when there are unsaved changes.
+
+## [0.7.2] — 2026-07-29
+
+### Changed
+- **Admin page redesign** on the unified HULO admin design system:
+  brand hero with help drawer, plain-English status sentence describing
+  exactly what the current rules do (with lockout warning), first-run
+  panel, tabbed layout (Rules / Block page / IP allowlist / Simulate /
+  Stats), KPI tiles and mini-bar country table on Stats.
+
 ## [0.7.0] — 2026-07-07
 
 ### Added

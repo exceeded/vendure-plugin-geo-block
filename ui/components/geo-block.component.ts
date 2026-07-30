@@ -49,11 +49,11 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <p class="hulo-hero-sub">Decide who can see this storefront — by country, IP, business hours or bot. All rules apply per channel.</p>
                 </div>
                 <div class="hulo-hero-actions">
-                    <button class="btn btn-link hulo-help-btn" (click)="helpOpen = !helpOpen" [attr.aria-expanded]="helpOpen">
+                    <button class="gbtn gbtn-hero hulo-help-btn" (click)="helpOpen = !helpOpen" [attr.aria-expanded]="helpOpen">
                         <clr-icon shape="help"></clr-icon>
                         <span>Help</span>
                     </button>
-                    <button class="btn btn-link" (click)="reload()" [disabled]="loading">
+                    <button class="gbtn gbtn-hero" (click)="reload()" [disabled]="loading">
                         <clr-icon shape="refresh"></clr-icon> Refresh
                     </button>
                 </div>
@@ -101,7 +101,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <h3>You're all set to configure {{ current.code || 'this channel' }}</h3>
                     <p>Nothing is enforced yet. Pick a region preset below, or flip Site access on to start with an allow-list of Worldwide (nothing blocked).</p>
                 </div>
-                <button class="btn btn-primary" (click)="turnOnWithDefaults()">Turn on (Worldwide)</button>
+                <button class="gbtn gbtn-primary" (click)="turnOnWithDefaults()">Turn on (Worldwide)</button>
             </div>
         </vdr-page-block>
 
@@ -113,8 +113,8 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <span *ngIf="updateBanner.isMajor" class="major-pill">major</span>
                 </div>
                 <div class="actions">
-                    <a [href]="'https://github.com/exceeded/vendure-plugin-geo-block/releases/tag/v' + updateBanner.latest" target="_blank" class="btn btn-sm btn-link">Release notes ↗</a>
-                    <button class="btn btn-sm" (click)="dismissUpdate()">Dismiss</button>
+                    <a [href]="'https://github.com/exceeded/vendure-plugin-geo-block/releases/tag/v' + updateBanner.latest" target="_blank" class="gbtn gbtn-ghost gbtn-sm">Release notes ↗</a>
+                    <button class="gbtn gbtn-outline gbtn-sm" (click)="dismissUpdate()">Dismiss</button>
                 </div>
             </div>
         </vdr-page-block>
@@ -128,12 +128,12 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                             <option *ngFor="let c of channels" [value]="c.token">{{ c.code }}</option>
                         </select>
 
-                        <span class="status-pill" [class.on]="current.enabled" [class.off]="!current.enabled">
-                            {{ current.enabled ? 'GEO-BLOCK ON' : 'GEO-BLOCK OFF' }}
+                        <span class="gb-switch-group">
+                            <button class="gb-switch" role="switch" [attr.aria-checked]="current.enabled" [class.on]="current.enabled" (click)="toggleEnabled()" aria-label="Site access enforcement">
+                                <span class="gb-switch-knob" aria-hidden="true"></span>
+                            </button>
+                            <span class="gb-switch-label">{{ current.enabled ? 'Enforcement on' : 'Enforcement off' }}</span>
                         </span>
-                        <button class="btn btn-sm" [class.btn-warning]="current.enabled" [class.btn-primary]="!current.enabled" (click)="toggleEnabled()">
-                            {{ current.enabled ? 'Turn off' : 'Turn on' }}
-                        </button>
 
                         <span class="mode-pill" *ngIf="current.enabled" [class.mode-block]="current.mode === 'block'" [class.mode-soft]="current.mode === 'soft'">
                             {{ current.mode === 'soft' ? 'Soft block (banner)' : 'Full block' }}
@@ -150,12 +150,12 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                         {{ statusSentence() }}
                     </p>
 
-                    <div class="tabs">
-                        <button class="tab" [class.active]="tab === 'rules'" (click)="tab = 'rules'">Rules</button>
-                        <button class="tab" [class.active]="tab === 'message'" (click)="tab = 'message'">Block page</button>
-                        <button class="tab" [class.active]="tab === 'allowlist'" (click)="tab = 'allowlist'">IP allowlist<span class="tab-count" *ngIf="current.ipAllowlist.length">{{ current.ipAllowlist.length }}</span></button>
-                        <button class="tab" [class.active]="tab === 'simulate'" (click)="tab = 'simulate'">Simulate</button>
-                        <button class="tab" [class.active]="tab === 'stats'" (click)="tab = 'stats'; loadStats()">Stats</button>
+                    <div class="tabs" role="tablist" aria-label="Site access sections">
+                        <button class="tab" role="tab" [attr.aria-selected]="tab === 'rules'" [class.active]="tab === 'rules'" (click)="tab = 'rules'">Rules</button>
+                        <button class="tab" role="tab" [attr.aria-selected]="tab === 'message'" [class.active]="tab === 'message'" (click)="tab = 'message'">Block page</button>
+                        <button class="tab" role="tab" [attr.aria-selected]="tab === 'allowlist'" [class.active]="tab === 'allowlist'" (click)="tab = 'allowlist'">IP allowlist<span class="tab-count" *ngIf="current.ipAllowlist.length">{{ current.ipAllowlist.length }}</span></button>
+                        <button class="tab" role="tab" [attr.aria-selected]="tab === 'simulate'" [class.active]="tab === 'simulate'" (click)="tab = 'simulate'">Simulate</button>
+                        <button class="tab" role="tab" [attr.aria-selected]="tab === 'stats'" [class.active]="tab === 'stats'" (click)="tab = 'stats'; loadStats()">Stats</button>
                     </div>
                 </div>
             </div>
@@ -233,13 +233,13 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                         <div class="chip-row">
                             <span class="chip" *ngFor="let cc of current.extraAllowed">
                                 {{ countryLabel(cc) }}
-                                <button class="chip-x" (click)="removeExtra(cc)" title="Remove">×</button>
+                                <button class="chip-x" (click)="removeExtra(cc)" [attr.aria-label]="'Remove ' + countryLabel(cc)">×</button>
                             </span>
                             <span *ngIf="!current.extraAllowed.length" class="hint inline">None yet.</span>
                         </div>
                         <div class="picker">
                             <input class="form-input" placeholder="Country code (e.g. JP, IL, BR)" [(ngModel)]="newExtra" (keyup.enter)="addExtra()" maxlength="2" style="text-transform: uppercase">
-                            <button class="btn btn-secondary btn-sm" (click)="addExtra()" [disabled]="!newExtra">+ Add</button>
+                            <button class="gbtn gbtn-outline gbtn-sm" (click)="addExtra()" [disabled]="!newExtra">+ Add</button>
                         </div>
                     </div>
                 </div>
@@ -254,13 +254,13 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                         <div class="chip-row">
                             <span class="chip blocked" *ngFor="let cc of current.blockedCountries">
                                 {{ countryLabel(cc) }}
-                                <button class="chip-x" (click)="removeBlocked(cc)" title="Remove">×</button>
+                                <button class="chip-x" (click)="removeBlocked(cc)" [attr.aria-label]="'Remove ' + countryLabel(cc)">×</button>
                             </span>
                             <span *ngIf="!current.blockedCountries.length" class="hint inline">None yet.</span>
                         </div>
                         <div class="picker">
                             <input class="form-input" placeholder="Country code (e.g. RU, IR)" [(ngModel)]="newBlocked" (keyup.enter)="addBlocked()" maxlength="2" style="text-transform: uppercase">
-                            <button class="btn btn-secondary btn-sm" (click)="addBlocked()" [disabled]="!newBlocked">+ Add</button>
+                            <button class="gbtn gbtn-outline gbtn-sm" (click)="addBlocked()" [disabled]="!newBlocked">+ Add</button>
                             <span class="hint inline" style="margin-left: 12px">Common: RU, BY, IR, KP, SY, CU, MM</span>
                         </div>
                     </div>
@@ -275,7 +275,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                                 <h3 class="step-title" style="margin-bottom:0">Country subdivisions <small>(optional)</small></h3>
                                 <p class="hint" style="margin:4px 0 0">Tighten to specific regions inside any allowed country — US states, CA provinces, AU states, DE Länder, UK regions, etc.</p>
                             </div>
-                            <button class="btn btn-sm" (click)="showSubdivisions = !showSubdivisions">
+                            <button class="gbtn gbtn-outline gbtn-sm" (click)="showSubdivisions = !showSubdivisions" [attr.aria-expanded]="showSubdivisions">
                                 {{ showSubdivisions ? 'Hide' : 'Show subdivisions' }}
                                 <span *ngIf="subdivisionCount() > 0" class="status-pill on" style="margin-left:8px">{{ subdivisionCount() }} configured</span>
                             </button>
@@ -288,20 +288,20 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                                     <option value="">— pick a country with known subdivisions —</option>
                                     <option *ngFor="let key of subdivisionCountries()" [value]="key">{{ key }} ({{ subdivisionsCatalogue[key].length }} subdivisions)</option>
                                 </select>
-                                <button class="btn btn-secondary btn-sm" (click)="addSubdivisionCountry()" [disabled]="!newSubdivisionCountry">+ Add</button>
+                                <button class="gbtn gbtn-outline gbtn-sm" (click)="addSubdivisionCountry()" [disabled]="!newSubdivisionCountry">+ Add</button>
                             </div>
 
                             <div *ngFor="let cc of activeSubdivisionCountries()" class="card" style="margin:10px 0;background:var(--color-component-bg-100)">
                                 <div class="card-block">
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
                                         <h4 style="margin:0;font-weight:600">{{ cc }} — {{ subdivisionsCatalogue[cc]?.length || 0 }} subdivisions available</h4>
-                                        <button class="btn btn-link btn-sm" (click)="removeSubdivisionCountry(cc)" style="color:#dc2626">Remove</button>
+                                        <button class="gbtn gbtn-ghost gbtn-danger gbtn-sm" (click)="removeSubdivisionCountry(cc)">Remove</button>
                                     </div>
                                     <p class="hint">Pick the subdivisions to allow. Leave empty = allow the whole country.</p>
                                     <div class="preset-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
                                         <label *ngFor="let s of subdivisionsCatalogue[cc]" class="preset-card" [class.active]="isSubdivisionPicked(cc, s.code)" style="padding:8px 12px">
                                             <input type="checkbox" [checked]="isSubdivisionPicked(cc, s.code)" (change)="toggleSubdivision(cc, s.code)">
-                                            <div style="font-size:13px">{{ s.label }} <span style="color:var(--color-component-color-300);font-size:11px">({{ s.code }})</span></div>
+                                            <div style="font-size:13px">{{ s.label }} <span class="sub-code">({{ s.code }})</span></div>
                                         </label>
                                     </div>
                                 </div>
@@ -383,13 +383,13 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                         <div class="chip-row">
                             <span class="chip mono" *ngFor="let ip of current.ipAllowlist">
                                 {{ ip }}
-                                <button class="chip-x" (click)="removeIp(ip)" title="Remove">×</button>
+                                <button class="chip-x" (click)="removeIp(ip)" [attr.aria-label]="'Remove ' + ip">×</button>
                             </span>
                             <span *ngIf="!current.ipAllowlist.length" class="hint inline">No bypass IPs configured.</span>
                         </div>
                         <div class="picker">
                             <input class="form-input mono" placeholder="203.0.113.42 or 203.0.113.0/24" [(ngModel)]="newIp" (keyup.enter)="addIp()" style="min-width: 260px">
-                            <button class="btn btn-secondary btn-sm" (click)="addIp()" [disabled]="!newIp">+ Add</button>
+                            <button class="gbtn gbtn-outline gbtn-sm" (click)="addIp()" [disabled]="!newIp">+ Add</button>
                         </div>
                     </div>
                 </div>
@@ -417,7 +417,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                                 <input class="form-input" [(ngModel)]="sim.ip" placeholder="203.0.113.42">
                             </div>
                         </div>
-                        <button class="btn btn-primary" (click)="runSim()" [disabled]="simBusy">
+                        <button class="gbtn gbtn-primary" (click)="runSim()" [disabled]="simBusy">
                             {{ simBusy ? 'Running…' : 'Run simulation' }}
                         </button>
 
@@ -503,44 +503,107 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         <!-- ============================================================= SAVE BAR -->
         <vdr-page-block *ngIf="!loading && current && tab !== 'simulate' && tab !== 'stats'">
             <div class="save-bar" [class.is-dirty]="dirty">
-                <button class="btn btn-primary" (click)="save()" [disabled]="saving">
+                <span class="save-msg" *ngIf="dirty"><span class="save-dot" aria-hidden="true"></span> Unsaved changes</span>
+                <span class="save-msg quiet" *ngIf="!dirty">All changes saved</span>
+                <span class="save-spacer"></span>
+                <button class="gbtn gbtn-ghost" (click)="reload()" [disabled]="saving || !dirty">Discard</button>
+                <button class="gbtn gbtn-primary" (click)="save()" [disabled]="saving || !dirty">
                     {{ saving ? 'Saving…' : 'Save changes' }}
                 </button>
-                <button class="btn btn-link" (click)="reload()" [disabled]="saving">Discard</button>
-                <span class="hint inline" *ngIf="dirty">Unsaved changes</span>
             </div>
         </vdr-page-block>
     `,
     styles: [`
-        :host { color: var(--color-text-100, inherit); display: block; }
+        :host { display: block; color: var(--gb-strong); }
 
-        /* ── Theme-adaptive semantic tokens ───────────────────────
-           Every success / warning / danger / info surface is DERIVED
-           from the admin theme variables with color-mix(), instead of
-           hardcoded pastel backgrounds. In light mode that yields the
-           familiar soft tints; in dark mode the same rules yield
-           dark-tinted surfaces with light text — no more light-text-
-           on-cream unreadables. Text always wears the theme ink; the
-           semantic hue lives in borders, rails and icons. */
+        /* ── Verified theme tokens ────────────────────────────────
+           The admin shell gives custom pages exactly ONE readable ink
+           per theme (light --color-text-100 is only #666666) and its
+           border tokens fail WCAG 1.4.11 for control boundaries in
+           both themes. So this page carries its own small token set,
+           per theme, every pair machine-checked against the real
+           admin surface colors: >= 4.5:1 for text, >= 3:1 for control
+           boundaries (see contrast-check in the release notes). */
         :host {
-            --gb-surface: var(--color-component-bg-100, #ffffff);
-            --gb-ink: var(--color-text-100, #0f172a);
-            --gb-ok: #10b981;
-            --gb-warn: #f59e0b;
-            --gb-bad: #ef4444;
-            --gb-info: #3b82f6;
-            --gb-tint-ok:   color-mix(in srgb, var(--gb-ok) 13%, var(--gb-surface));
-            --gb-tint-warn: color-mix(in srgb, var(--gb-warn) 14%, var(--gb-surface));
-            --gb-tint-bad:  color-mix(in srgb, var(--gb-bad) 13%, var(--gb-surface));
-            --gb-tint-info: color-mix(in srgb, var(--gb-info) 13%, var(--gb-surface));
+            --gb-surface: var(--color-component-bg-100, #fafafa);
+            --gb-surface-2: var(--color-component-bg-200, #f2f3f5);
+            --gb-line: var(--color-component-border-200, #d5d8de);
+            --gb-line-soft: var(--color-component-border-100, #e8eaee);
+            --gb-strong: #3d4147;
+            --gb-muted: #5d6470;
+            --gb-ui-border: #79818f;
+            --gb-amber: #f59e0b;
+            --gb-amber-hover: #e18f06;
+            --gb-amber-edge: #b45309;
+            --gb-amber-ink: #231602;
+            --gb-danger-ink: #b91c1c;
+            --gb-ok: #10b981; --gb-warn: #f59e0b; --gb-bad: #ef4444; --gb-info: #3b82f6;
+            --gb-tint-ok:   color-mix(in srgb, var(--gb-ok) 10%, var(--gb-surface));
+            --gb-tint-warn: color-mix(in srgb, var(--gb-warn) 12%, var(--gb-surface));
+            --gb-tint-bad:  color-mix(in srgb, var(--gb-bad) 10%, var(--gb-surface));
+            --gb-tint-info: color-mix(in srgb, var(--gb-info) 10%, var(--gb-surface));
             --gb-line-ok:   color-mix(in srgb, var(--gb-ok) 45%, transparent);
             --gb-line-warn: color-mix(in srgb, var(--gb-warn) 50%, transparent);
             --gb-line-bad:  color-mix(in srgb, var(--gb-bad) 45%, transparent);
             --gb-line-info: color-mix(in srgb, var(--gb-info) 45%, transparent);
-            --gb-ink-ok:   color-mix(in srgb, var(--gb-ok) 45%, var(--gb-ink));
-            --gb-ink-warn: color-mix(in srgb, var(--gb-warn) 50%, var(--gb-ink));
-            --gb-ink-bad:  color-mix(in srgb, var(--gb-bad) 50%, var(--gb-ink));
+            --gb-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
         }
+        :host-context([data-theme='dark']) {
+            --gb-strong: var(--color-text-100, hsl(210, 16%, 93%));
+            --gb-muted: hsl(205, 14%, 74%);
+            --gb-ui-border: hsl(203, 12%, 50%);
+            --gb-amber-edge: #f59e0b;
+            --gb-danger-ink: #f87171;
+            --gb-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+        }
+
+        /* ── Self-owned buttons (the admin CSS has no .btn-secondary
+           and styles .btn only contextually — never borrow again) ── */
+        .gbtn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            min-height: 36px; padding: 0 16px; border-radius: 8px;
+            font-size: 13px; font-weight: 600; line-height: 1.2; white-space: nowrap;
+            border: 1px solid transparent; background: none; cursor: pointer;
+            color: var(--gb-strong); text-decoration: none;
+            transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+        }
+        .gbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .gbtn:focus-visible, .gb-switch:focus-visible, .tab:focus-visible, .chip-x:focus-visible {
+            outline: 2px solid var(--gb-amber-edge); outline-offset: 2px;
+        }
+        .gbtn-sm { min-height: 30px; padding: 0 12px; font-size: 12px; }
+        .gbtn-primary {
+            background: var(--gb-amber); border-color: var(--gb-amber-edge);
+            color: var(--gb-amber-ink); box-shadow: var(--gb-shadow-1);
+        }
+        .gbtn-primary:hover:not(:disabled) { background: var(--gb-amber-hover); }
+        .gbtn-outline { border-color: var(--gb-ui-border); background: var(--gb-surface); }
+        .gbtn-outline:hover:not(:disabled) { border-color: var(--gb-amber-edge); background: var(--gb-surface-2); }
+        .gbtn-ghost { color: var(--gb-muted); }
+        .gbtn-ghost:hover:not(:disabled) { color: var(--gb-strong); background: var(--gb-surface-2); }
+        .gbtn-danger { color: var(--gb-danger-ink); }
+        .gbtn-danger:hover:not(:disabled) { color: var(--gb-danger-ink); background: var(--gb-tint-bad); }
+        .gbtn-hero { color: #e2e8f0; }
+        .gbtn-hero:hover:not(:disabled) { color: #ffffff; background: rgba(255, 255, 255, 0.12); }
+        .gbtn-hero:focus-visible { outline-color: #f59e0b; }
+
+        /* ── Enforcement switch ──────────────────────────────────── */
+        .gb-switch-group { display: inline-flex; align-items: center; gap: 8px; }
+        .gb-switch {
+            position: relative; width: 44px; height: 24px; flex: 0 0 auto;
+            border-radius: 999px; border: 1px solid transparent; padding: 0;
+            background: var(--gb-ui-border); cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .gb-switch.on { background: var(--gb-amber); border-color: var(--gb-amber-edge); }
+        .gb-switch-knob {
+            position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+            border-radius: 50%; background: #ffffff;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+            transition: transform 0.15s ease;
+        }
+        .gb-switch.on .gb-switch-knob { transform: translateX(20px); }
+        .gb-switch-label { font-size: 13px; font-weight: 700; color: var(--gb-strong); }
 
         /* ── HULO hero (deliberate dark brand island, both themes) ── */
         .hulo-hero {
@@ -548,7 +611,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
             padding: 20px 22px; border-radius: 14px;
             background: linear-gradient(135deg, #0f1419 0%, #1e293b 100%);
             color: #fff;
-            box-shadow: 0 1px 3px rgba(15,23,42,.15), 0 8px 24px rgba(15,23,42,.08);
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15), 0 8px 24px rgba(15, 23, 42, 0.08);
         }
         .hulo-hero-logo { flex: 0 0 auto; width: 56px; height: 56px; }
         .hulo-hero-logo svg { width: 100%; height: 100%; display: block; }
@@ -556,110 +619,112 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .hulo-hero-title { color: #fff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
         .hulo-hero-sub { color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 4px 0 0; max-width: 640px; }
         .hulo-hero-actions { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
-        .hulo-hero-actions .btn { color: #f8fafc; }
-        .hulo-hero-actions .btn:hover { color: #f59e0b; }
         .hulo-help-btn clr-icon { margin-right: 4px; }
 
-        /* ── Help drawer + first-run — theme-adaptive tints ──────── */
+        /* ── Help drawer + first-run ─────────────────────────────── */
         .hulo-help-drawer {
             background: var(--gb-tint-warn); border: 1px solid var(--gb-line-warn);
-            border-radius: 12px; padding: 20px 22px; color: var(--gb-ink);
+            border-radius: 12px; padding: 20px 22px; color: var(--gb-strong);
         }
         .hulo-help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-        .hulo-help-card { background: var(--gb-surface); border-radius: 10px; padding: 16px; border: 1px solid var(--color-component-border-200, #e2e8f0); }
+        .hulo-help-card { background: var(--gb-surface); border-radius: 10px; padding: 16px; border: 1px solid var(--gb-line); }
         .hulo-help-num {
             width: 24px; height: 24px; border-radius: 999px;
-            background: #f59e0b; color: #1a1205; font-weight: 800; font-size: 13px;
+            background: var(--gb-amber); color: var(--gb-amber-ink);
+            font-weight: 800; font-size: 13px;
             display: grid; place-items: center; margin-bottom: 8px;
         }
-        .hulo-help-card h4 { margin: 0 0 4px; font-size: 14px; color: var(--gb-ink); }
-        .hulo-help-card p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--color-component-color-200, #475569); }
+        .hulo-help-card h4 { margin: 0 0 4px; font-size: 14px; color: var(--gb-strong); }
+        .hulo-help-card p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gb-muted); }
         .hulo-help-links { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--gb-line-warn); display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
-        .hulo-help-links a { color: var(--gb-ink-warn); text-decoration: none; font-weight: 600; }
-        .hulo-help-links a:hover { text-decoration: underline; }
+        .hulo-help-links a { color: var(--gb-strong); text-decoration: underline; text-underline-offset: 2px; font-weight: 600; }
+        .hulo-help-links a:hover { color: var(--gb-amber-edge); }
         .hulo-firstrun {
             display: flex; align-items: center; gap: 16px;
             padding: 20px 22px; border-radius: 12px;
-            background: var(--gb-tint-ok); border: 1px solid var(--gb-line-ok); color: var(--gb-ink);
+            background: var(--gb-tint-ok); border: 1px solid var(--gb-line-ok); color: var(--gb-strong);
         }
         .hulo-firstrun-emoji { font-size: 32px; line-height: 1; }
-        .hulo-firstrun h3 { margin: 0; font-size: 16px; color: var(--gb-ink); }
-        .hulo-firstrun p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--color-component-color-200, #475569); max-width: 640px; }
-        .hulo-firstrun .btn { margin-left: auto; flex: 0 0 auto; }
+        .hulo-firstrun h3 { margin: 0; font-size: 16px; color: var(--gb-strong); }
+        .hulo-firstrun p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--gb-muted); max-width: 640px; }
+        .hulo-firstrun .gbtn { margin-left: auto; flex: 0 0 auto; }
 
         /* ── Unified card system ─────────────────────────────────── */
         .card {
             background: var(--gb-surface);
-            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            border: 1px solid var(--gb-line);
             border-radius: 12px; overflow: visible; min-width: 0;
+            box-shadow: var(--gb-shadow-1);
         }
         .card + .card { margin-top: 16px; }
         .card-block { padding: 18px 20px; }
-        .step-title { font-size: 15px; font-weight: 700; color: var(--gb-ink); margin: 0 0 4px; }
-        .step-title small { font-weight: 500; font-size: 12px; color: var(--color-component-color-300, #64748b); }
+        .step-title { font-size: 15px; font-weight: 700; color: var(--gb-strong); margin: 0 0 4px; }
+        .step-title small { font-weight: 500; font-size: 12px; color: var(--gb-muted); }
         .subsection-title {
             margin: 24px 0 8px; font-size: 11px; font-weight: 700;
             letter-spacing: 0.06em; text-transform: uppercase;
-            color: var(--color-component-color-300, #64748b);
+            color: var(--gb-muted);
         }
-        .hint { font-size: 12px; color: var(--color-component-color-300, #64748b); margin: 2px 0 12px; }
+        .hint { font-size: 12px; color: var(--gb-muted); margin: 2px 0 12px; }
         .hint.inline { display: inline; margin: 0; }
         .mono { font-family: ui-monospace, monospace; }
-        .warn { color: var(--gb-ink-warn); }
+        .warn { color: var(--gb-strong); }
+        .sub-code { color: var(--gb-muted); font-size: 11px; }
 
-        /* ── Top bar: channel + status + tabs ────────────────────── */
-        .top-bar { border-left: 4px solid #f59e0b; }
+        /* ── Top bar: channel + switch + status + tabs ───────────── */
+        .top-bar { border-left: 4px solid var(--gb-amber); }
         .chan-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         .lbl {
             font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-            text-transform: uppercase; color: var(--color-component-color-300, #64748b);
+            text-transform: uppercase; color: var(--gb-muted);
         }
         .form-select, .form-input {
-            padding: 7px 10px; border-radius: 6px;
-            border: 1px solid var(--color-component-border-200, #d1d5db);
+            padding: 7px 10px; border-radius: 8px; min-height: 36px;
+            border: 1px solid var(--gb-ui-border);
             background: var(--gb-surface);
-            color: var(--gb-ink); font-size: 13px;
+            color: var(--gb-strong); font-size: 13px;
         }
+        .form-input::placeholder { color: var(--gb-muted); opacity: 0.8; }
         .form-select { min-width: 180px; }
         .form-select:focus, .form-input:focus {
-            outline: none; border-color: #f59e0b;
-            box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 25%, transparent);
+            outline: none; border-color: var(--gb-amber-edge);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--gb-amber) 30%, transparent);
         }
         .status-pill {
             font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
-            padding: 4px 10px; border-radius: 999px;
+            padding: 4px 10px; border-radius: 999px; color: var(--gb-strong);
         }
-        .status-pill.on { background: var(--gb-tint-ok); color: var(--gb-ink); border: 1px solid var(--gb-line-ok); }
-        .status-pill.off { background: var(--color-component-bg-200, #f1f5f9); color: var(--color-component-color-300, #64748b); border: 1px solid var(--color-component-border-200, #e2e8f0); }
-        .mode-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: var(--gb-ink); }
+        .status-pill.on { background: var(--gb-tint-ok); border: 1px solid var(--gb-line-ok); }
+        .status-pill.off { background: var(--gb-surface-2); color: var(--gb-muted); border: 1px solid var(--gb-line); }
+        .mode-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: var(--gb-strong); }
         .mode-pill.mode-block { background: var(--gb-tint-bad); border: 1px solid var(--gb-line-bad); }
         .mode-pill.mode-soft { background: var(--gb-tint-warn); border: 1px solid var(--gb-line-warn); }
-        .dirty-flag { font-size: 12px; font-weight: 700; color: var(--gb-ink-warn); }
+        .dirty-flag { font-size: 12px; font-weight: 700; color: var(--gb-amber-edge); }
         .status-sentence {
             margin: 12px 0 0; padding: 10px 14px; border-radius: 8px;
-            font-size: 13px; line-height: 1.5; color: var(--gb-ink);
+            font-size: 13px; line-height: 1.5; color: var(--gb-strong);
             background: var(--gb-tint-ok); border: 1px solid var(--gb-line-ok);
             border-left-width: 4px;
         }
         .status-sentence.status-off {
-            background: var(--color-component-bg-200, #f8fafc);
-            border-color: var(--color-component-border-200, #e2e8f0);
-            color: var(--color-component-color-200, #475569);
+            background: var(--gb-surface-2); border-color: var(--gb-line);
+            color: var(--gb-muted);
         }
         .status-sentence.status-danger {
             background: var(--gb-tint-bad); border-color: var(--gb-line-bad);
-            color: var(--gb-ink); font-weight: 600;
+            color: var(--gb-strong); font-weight: 600;
         }
-        .tabs { display: flex; gap: 4px; margin-top: 14px; flex-wrap: wrap; border-top: 1px solid var(--color-component-border-100, #f1f5f9); padding-top: 12px; }
+        .tabs { display: flex; gap: 4px; margin-top: 14px; flex-wrap: wrap; border-top: 1px solid var(--gb-line-soft); padding-top: 12px; }
         .tab {
             display: inline-flex; align-items: center; gap: 6px;
             padding: 7px 14px; min-height: 34px; border-radius: 999px;
             border: 1px solid transparent; background: none; cursor: pointer;
             font-size: 13px; font-weight: 600;
-            color: var(--color-component-color-300, #64748b);
+            color: var(--gb-muted);
+            transition: background 0.12s ease, color 0.12s ease;
         }
-        .tab:hover { color: var(--gb-ink); background: var(--color-component-bg-200, #f8fafc); }
-        .tab.active { background: #f59e0b; color: #1a1205; }
+        .tab:hover { color: var(--gb-strong); background: var(--gb-surface-2); }
+        .tab.active { background: var(--gb-amber); border-color: var(--gb-amber-edge); color: var(--gb-amber-ink); }
         .tab-count {
             font-size: 10px; font-weight: 800; min-width: 16px; height: 16px;
             padding: 0 4px; border-radius: 999px; display: inline-grid; place-items: center;
@@ -670,81 +735,84 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 8px; }
         .mode-card {
             display: block; padding: 14px 16px; border-radius: 10px; cursor: pointer;
-            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            border: 1px solid var(--gb-line);
             background: var(--gb-surface);
             transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
-        .mode-card:hover { border-color: #f59e0b; }
-        .mode-card.active { border-color: #f59e0b; box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 25%, transparent); }
-        .mode-card input { margin-right: 6px; accent-color: #b45309; }
-        .mode-title { font-size: 13px; font-weight: 700; color: var(--gb-ink); display: inline; }
-        .mode-body { margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--color-component-color-300, #64748b); }
+        .mode-card:hover { border-color: var(--gb-amber-edge); }
+        .mode-card.active { border-color: var(--gb-amber-edge); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gb-amber) 30%, transparent); }
+        .mode-card:focus-within, .preset-card:focus-within { outline: 2px solid var(--gb-amber-edge); outline-offset: 2px; }
+        .mode-card input, .preset-card input { margin-right: 6px; accent-color: var(--gb-amber-edge); }
+        .mode-title { font-size: 13px; font-weight: 700; color: var(--gb-strong); display: inline; }
+        .mode-body { margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--gb-muted); }
         .preset-section { margin-bottom: 14px; }
         .group-title {
             margin: 0 0 8px; font-size: 11px; font-weight: 700;
             letter-spacing: 0.06em; text-transform: uppercase;
-            color: var(--color-component-color-300, #64748b);
+            color: var(--gb-muted);
         }
         .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
         .preset-card {
             display: block; padding: 10px 12px; border-radius: 8px; cursor: pointer;
-            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            border: 1px solid var(--gb-line);
             background: var(--gb-surface);
             transition: border-color 0.15s ease, background 0.15s ease;
         }
-        .preset-card:hover { border-color: #f59e0b; }
-        .preset-card.active { border-color: #f59e0b; background: var(--gb-tint-warn); }
-        .preset-card input { margin-right: 6px; accent-color: #b45309; }
-        .preset-label { display: inline; font-size: 13px; font-weight: 600; color: var(--gb-ink); }
-        .preset-hint { margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--color-component-color-300, #64748b); }
+        .preset-card:hover { border-color: var(--gb-amber-edge); }
+        .preset-card.active { border-color: var(--gb-amber-edge); background: var(--gb-tint-warn); }
+        .preset-label { display: inline; font-size: 13px; font-weight: 600; color: var(--gb-strong); }
+        .preset-hint { margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--gb-muted); }
         .filter-input { width: 100%; max-width: 320px; margin-bottom: 12px; }
 
         /* ── Chips + pickers ─────────────────────────────────────── */
-        .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; min-height: 30px; align-items: center; }
+        .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; min-height: 32px; align-items: center; }
         .chip {
             display: inline-flex; align-items: center; gap: 4px;
-            padding: 4px 8px 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
-            background: var(--color-component-bg-200, #f1f5f9);
-            border: 1px solid var(--color-component-border-200, #e2e8f0);
-            color: var(--gb-ink);
+            padding: 4px 6px 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+            background: var(--gb-surface-2);
+            border: 1px solid var(--gb-line);
+            color: var(--gb-strong);
         }
         .chip-x {
-            background: none; border: 0; cursor: pointer; font-size: 14px; line-height: 1;
-            padding: 0 2px; color: var(--color-component-color-300, #64748b);
+            display: inline-grid; place-items: center;
+            min-width: 22px; min-height: 22px; border-radius: 999px;
+            background: none; border: 0; cursor: pointer; font-size: 15px; line-height: 1;
+            padding: 0; color: var(--gb-muted);
         }
-        .chip-x:hover { color: var(--gb-bad); }
+        .chip-x:hover { color: var(--gb-danger-ink); background: var(--gb-tint-bad); }
         .picker { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .form-row { margin-bottom: 16px; }
-        .form-row label { display: block; font-size: 12px; font-weight: 700; color: var(--color-component-color-200, #475569); margin-bottom: 4px; }
-        .form-row label small { font-weight: 500; color: var(--color-component-color-300, #64748b); }
+        .form-row label { display: block; font-size: 12px; font-weight: 700; color: var(--gb-strong); margin-bottom: 4px; }
+        .form-row label small { font-weight: 500; color: var(--gb-muted); }
         .form-row .form-input { width: 100%; max-width: 560px; }
-        .form-row textarea.form-input { max-width: 100%; }
+        .form-row textarea.form-input { max-width: 100%; min-height: 0; }
 
         /* ── Resolved preview / what-it-means banners ────────────── */
         .preview-banner {
             border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
-            font-size: 13px; line-height: 1.5; color: var(--gb-ink);
+            font-size: 13px; line-height: 1.5; color: var(--gb-strong);
             border: 1px solid; border-left-width: 4px;
         }
-        .preview-off { background: var(--color-component-bg-200, #f8fafc); border-color: var(--color-component-border-200, #e2e8f0); color: var(--color-component-color-200, #475569); }
+        .preview-off { background: var(--gb-surface-2); border-color: var(--gb-line); color: var(--gb-muted); }
         .preview-allow { background: var(--gb-tint-ok); border-color: var(--gb-line-ok); }
         .preview-block { background: var(--gb-tint-bad); border-color: var(--gb-line-bad); }
         .country-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
         .mini-chip {
             font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
             background: var(--gb-surface); border: 1px solid var(--gb-line-ok);
-            color: var(--gb-ink); font-family: ui-monospace, monospace;
+            color: var(--gb-strong); font-family: ui-monospace, monospace;
         }
         .mini-chip.blocked { border-color: var(--gb-line-bad); }
 
         /* ── Simulate ────────────────────────────────────────────── */
         .sim-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
-        .sim-grid label { display: block; font-size: 12px; font-weight: 700; color: var(--color-component-color-200, #475569); margin-bottom: 4px; }
+        .sim-grid label { display: block; font-size: 12px; font-weight: 700; color: var(--gb-strong); margin-bottom: 4px; }
+        .sim-grid label small { font-weight: 500; color: var(--gb-muted); }
         .sim-grid .form-input { width: 100%; }
         .sim-result { margin-top: 16px; }
         .sim-banner {
             border-radius: 8px; padding: 12px 14px; font-size: 13px;
-            color: var(--gb-ink); border: 1px solid; border-left-width: 4px;
+            color: var(--gb-strong); border: 1px solid; border-left-width: 4px;
         }
         .sim-banner.allow { background: var(--gb-tint-ok); border-color: var(--gb-line-ok); }
         .sim-banner.deny { background: var(--gb-tint-bad); border-color: var(--gb-line-bad); }
@@ -753,66 +821,78 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
         .kpi {
             background: var(--gb-surface);
-            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            border: 1px solid var(--gb-line);
             border-radius: 12px; padding: 16px 18px; min-width: 0;
         }
         .kpi-label {
             font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-            text-transform: uppercase; color: var(--color-component-color-300, #64748b);
+            text-transform: uppercase; color: var(--gb-muted);
         }
         .kpi-num {
             margin-top: 6px; font-size: 26px; font-weight: 700; line-height: 1.1;
-            color: var(--gb-ink);
+            color: var(--gb-strong);
             font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
         }
-        .kpi-sub { margin-top: 4px; font-size: 12px; color: var(--color-component-color-300, #64748b); }
+        .kpi-sub { margin-top: 4px; font-size: 12px; color: var(--gb-muted); }
         .table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .table th {
             text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
-            text-transform: uppercase; color: var(--color-component-color-300, #64748b);
-            padding: 8px 10px; border-bottom: 1px solid var(--color-component-border-200, #e2e8f0);
+            text-transform: uppercase; color: var(--gb-muted);
+            padding: 8px 10px; border-bottom: 1px solid var(--gb-line);
         }
-        .table td { padding: 9px 10px; border-bottom: 1px solid var(--color-component-border-100, #f1f5f9); color: var(--gb-ink); }
-        .table tbody tr:hover { background: var(--color-component-bg-200, #f8fafc); }
+        .table td { padding: 9px 10px; border-bottom: 1px solid var(--gb-line-soft); color: var(--gb-strong); }
+        .table tbody tr:hover { background: var(--gb-surface-2); }
         .table .num-col { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .table th.num-col { text-align: right; }
         .mini-track {
             display: block; height: 6px; margin-top: 5px; max-width: 240px;
-            background: var(--color-component-bg-200, #f1f5f9);
+            background: var(--gb-surface-2);
             border-radius: 999px; overflow: hidden;
         }
-        .mini-fill { display: block; height: 100%; background: #f59e0b; border-radius: 999px; }
+        .mini-fill { display: block; height: 100%; background: var(--gb-amber); border-radius: 999px; }
 
-        /* ── Save bar — quiet until there's something to save ────── */
+        /* ── Save bar — sticky, quiet until dirty ────────────────── */
         .save-bar {
-            display: flex; align-items: center; gap: 12px;
-            padding: 14px 18px; border-radius: 12px;
+            position: sticky; bottom: 12px; z-index: 5;
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 16px; border-radius: 12px;
             background: var(--gb-surface);
-            border: 1px solid var(--color-component-border-200, #e2e8f0);
+            border: 1px solid var(--gb-line);
+            box-shadow: var(--gb-shadow-1);
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
         .save-bar.is-dirty {
-            border-color: var(--gb-line-warn);
-            border-left: 4px solid #f59e0b;
-            box-shadow: 0 4px 16px color-mix(in srgb, #f59e0b 18%, transparent);
+            border-color: var(--gb-amber-edge);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
         }
+        .save-msg { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--gb-strong); }
+        .save-msg.quiet { color: var(--gb-muted); font-weight: 500; }
+        .save-dot {
+            width: 8px; height: 8px; border-radius: 50%; background: var(--gb-amber);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--gb-amber) 25%, transparent);
+        }
+        .save-spacer { flex: 1; }
 
         /* ── Update banner ───────────────────────────────────────── */
         .update-banner {
             display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
-            padding: 12px 16px; border-radius: 10px; font-size: 13px; color: var(--gb-ink);
+            padding: 12px 16px; border-radius: 10px; font-size: 13px; color: var(--gb-strong);
             background: var(--gb-tint-info); border: 1px solid var(--gb-line-info);
         }
         .update-banner.major { background: var(--gb-tint-warn); border-color: var(--gb-line-warn); }
         .major-pill { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: #b45309; color: #fff; margin-left: 6px; }
         .update-banner .actions { display: flex; gap: 6px; align-items: center; }
 
+        @media (prefers-reduced-motion: reduce) {
+            .gbtn, .gb-switch, .gb-switch-knob, .tab, .mode-card, .preset-card, .save-bar { transition: none; }
+        }
         @media (max-width: 640px) {
             .hulo-hero { flex-wrap: wrap; }
             .hulo-hero-actions { width: 100%; justify-content: flex-end; }
             .hulo-firstrun { flex-wrap: wrap; }
-            .hulo-firstrun .btn { margin-left: 0; margin-top: 8px; width: 100%; }
+            .hulo-firstrun .gbtn { margin-left: 0; margin-top: 8px; width: 100%; }
             .form-select { min-width: 0; flex: 1; }
+            .save-bar { flex-wrap: wrap; }
         }
     `],
 })
