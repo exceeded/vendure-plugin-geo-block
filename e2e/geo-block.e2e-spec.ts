@@ -42,19 +42,20 @@ describe('@huloglobal/vendure-plugin-geo-block', () => {
         expect([401, 403]).toContain(res.status);
     });
 
-    it('exposes a preset catalogue', async () => {
+    it('gates the preset catalogue to the free tier when unlicensed', async () => {
+        // This test instance boots without a licence key, so the /presets
+        // endpoint must return ONLY the 5 free-tier presets — this verifies
+        // the licence gate, the most important commercial contract.
         const res = await fetch(`http://localhost:${PORT}/geo-block/presets`);
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(Array.isArray(body.presets)).toBe(true);
-        // We now ship 30+ presets — fail loud if the catalogue collapses.
-        expect(body.presets.length).toBeGreaterThanOrEqual(30);
-        const keys = body.presets.map((p: any) => p.key);
-        expect(keys).toContain('EU');
-        expect(keys).toContain('GCC');
-        expect(keys).toContain('SCHENGEN');
-        expect(keys).toContain('NATO');
-        expect(keys).toContain('WORLDWIDE');
+        const keys = body.presets.map((p: any) => p.key).sort();
+        expect(keys).toEqual(['EU', 'NORTH_AMERICA', 'OCEANIA', 'UK_ONLY', 'WORLDWIDE'].sort());
+        // Premium presets must NOT leak to unlicensed callers.
+        expect(keys).not.toContain('GCC');
+        expect(keys).not.toContain('SCHENGEN');
+        expect(keys).not.toContain('NATO');
     });
 
     it('/check returns allow when geo-block is disabled', async () => {
