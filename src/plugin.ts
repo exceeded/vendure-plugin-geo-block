@@ -1,5 +1,5 @@
 import { LanguageCode, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
-import { fingerprintPublicKey, Heartbeat, LicenceStatus, RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence, warnIfIncompatibleVendure } from '@huloglobal/vendure-licence-sdk';
+import { fingerprintPublicKey, Heartbeat, LicenceStatus, RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence, warnIfIncompatibleVendure, EvaluationClient, EvaluationState} from '@huloglobal/vendure-licence-sdk';
 import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
 import { GeoBlockAdminResolver, geoBlockAdminApiSchema } from './admin-api';
@@ -187,6 +187,23 @@ export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
     },
 })
 export class GeoBlockPlugin {
+    private static evalClientInternal: EvaluationClient | null = null;
+    static getEvalState(): EvaluationState | null { return GeoBlockPlugin.evalClientInternal?.getState() ?? null; }
+    static getEvalInstanceId(): string | null { return GeoBlockPlugin.evalClientInternal?.getInstanceId() ?? null; }
+    /** Licensed installs AND installs inside the 14-day server-anchored
+     *  evaluation window get the full feature set. After the window the
+     *  plugin drops to the free tier. */
+    static hasPremiumAccess(): boolean {
+        if (GeoBlockPlugin.licenceStatus?.valid) return true;
+        return !!GeoBlockPlugin.evalClientInternal?.getState()?.active;
+    }
+    static startEvaluation(): void {
+        if (!GeoBlockPlugin.evalClientInternal) {
+            GeoBlockPlugin.evalClientInternal = new EvaluationClient({ packageName: PKG_NAME, packageVersion: PKG_VERSION });
+            GeoBlockPlugin.evalClientInternal.start();
+        }
+    }
+
     private static revocation: RevocationChecker | null = null;
     private static updateChecker: UpdateChecker | null = null;
     private static heartbeat: Heartbeat | null = null;
@@ -230,6 +247,9 @@ export class GeoBlockPlugin {
         GeoBlockPlugin.licenceStatus = status;
 
         if (!status.valid) {
+            // Unlicensed: start the server-anchored 14-day full-featured
+            // evaluation; premium paths stay on until it expires.
+            GeoBlockPlugin.startEvaluation();
             // eslint-disable-next-line no-console
             console.warn(
                 `[@huloglobal/vendure-plugin-geo-block] ${status.message}` +

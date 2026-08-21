@@ -221,7 +221,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         // block / banner-only mode) and ignore the saved subdivision
         // map. The block decision itself still runs so the free tier
         // is genuinely useful — just narrower.
-        const licensed = isLicensed(GeoBlockPlugin.getLicenceStatus());
+        const licensed = GeoBlockPlugin.hasPremiumAccess();
         if (!licensed) {
             cfg.geoBlock.mode = 'block';
             cfg.geoBlock.allowedSubdivisions = {};
@@ -339,7 +339,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      * and any storefront that wants to show "we serve <X>". */
     @Get('presets')
     presets(@Res() res: Response) {
-        const licensed = isLicensed(GeoBlockPlugin.getLicenceStatus());
+        const licensed = GeoBlockPlugin.hasPremiumAccess();
         // Unlicensed callers get only the 5 free-tier presets. Each
         // preset is also annotated with `requiresLicence` so the admin
         // UI can show a small lock icon next to gated rows.
@@ -360,7 +360,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      *  (US states, CA provinces, AU states, DE Länder, etc.). */
     @Get('subdivisions')
     subdivisions(@Res() res: Response) {
-        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+        if (!GeoBlockPlugin.hasPremiumAccess()) {
             // Subdivision-level blocking is paid-only. Returning an
             // empty map keeps the admin UI's picker silent rather
             // than showing options that won't actually be honoured.
@@ -502,7 +502,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      */
     @Get('admin/stats')
     async stats(@Ctx() ctx: RequestContext, @Req() req: Request, @Res() res: Response) {
-        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+        if (!GeoBlockPlugin.hasPremiumAccess()) {
             return res.status(402).json(premiumFeatureError('vendure-plugin-geo-block'));
         }
         if (!requireAdmin(ctx, res, false)) return;
@@ -559,7 +559,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     @Post('admin/simulate')
     async simulate(@Ctx() ctx: RequestContext, @Body() body: any, @Res() res: Response) {
         if (!requireAdmin(ctx, res, false)) return;
-        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+        if (!GeoBlockPlugin.hasPremiumAccess()) {
             return res.status(402).json(premiumFeatureError('vendure-plugin-geo-block'));
         }
         if (!body?.token) return res.status(400).json({ error: 'channel token required' });
@@ -748,7 +748,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         // Audit log persistence is a paid feature — unlicensed mode
         // returns immediately. The block decision itself is unaffected;
         // the operator just doesn't get the historical view.
-        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) return;
+        if (!GeoBlockPlugin.hasPremiumAccess()) return;
         try {
             const repo = this.connection.rawConnection.getRepository(GeoBlockEvent);
             const row = repo.create({

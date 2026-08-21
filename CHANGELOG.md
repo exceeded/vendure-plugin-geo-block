@@ -4,6 +4,16 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-08-21
+
+### Added
+- **14-day full-featured evaluation.** Unlicensed installs now get the
+  complete feature set for 14 days instead of the restricted free tier.
+  Premium blocking features now also run during the evaluation window. The clock is anchored server-side (a hashed
+  instance id — no personal data), so reinstalling does not restart it,
+  and it fails open: if the licence server is unreachable the plugin
+  keeps running fully. After the window the plugin drops to the free
+  tier; all configuration is kept and reactivates instantly with a key.
 ## [0.7.4] — 2026-07-30
 
 ### Fixed

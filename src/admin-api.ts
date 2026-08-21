@@ -124,7 +124,7 @@ export class GeoBlockAdminResolver {
     @Query()
     @Allow(Permission.ReadCatalog)
     geoBlockPresets(): { tier: string; items: any[] } {
-        const licensed = isLicensed(GeoBlockPlugin.getLicenceStatus());
+        const licensed = GeoBlockPlugin.hasPremiumAccess();
         const annotated = REGION_PRESETS.map(p => ({
             ...p,
             requiresLicence: !FREE_TIER_PRESET_KEYS.includes(p.key),
@@ -178,7 +178,7 @@ export class GeoBlockAdminResolver {
         @Args('channelId') channelId: number,
         @Args('days') daysInput?: number,
     ): Promise<any> {
-        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+        if (!GeoBlockPlugin.hasPremiumAccess()) {
             throw new Error(premiumFeatureError('vendure-plugin-geo-block').message);
         }
         const days = Math.min(Math.max(Number(daysInput) || 30, 1), 365);
@@ -251,7 +251,7 @@ export class GeoBlockAdminResolver {
     @Mutation()
     @Allow(Permission.ReadCatalog)
     async geoBlockSimulate(@Args('input') input: any): Promise<any> {
-        if (!isLicensed(GeoBlockPlugin.getLicenceStatus())) {
+        if (!GeoBlockPlugin.hasPremiumAccess()) {
             throw new Error(premiumFeatureError('vendure-plugin-geo-block').message);
         }
         const rows = await this.connection.rawConnection.query(
