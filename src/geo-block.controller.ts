@@ -6,8 +6,7 @@ import {
     premiumFeatureError,
     RateLimiter,
     startRetentionSweeper,
-    verifySignedValue,
-} from '@huloglobal/vendure-licence-sdk';
+    verifySignedValue, LicenceStore } from '@huloglobal/vendure-licence-sdk';
 import { Ctx, Logger, Permission, RequestContext, TransactionalConnection } from '@vendure/core';
 import { Request, Response } from 'express';
 import { GeoBlockEvent } from './geo-block-event.entity';
@@ -24,6 +23,8 @@ import { getRealIp, getResolvedCountry, getResolvedRegion } from './proxy-header
 import { isAllowlistedBot, matchedBotEntry } from './bot-detect';
 import { BusinessHoursSchedule, checkSchedule } from './schedule';
 import { buildHuloGeoJs, buildBlockedPageHtml } from './storefront-assets';
+
+const PLUGIN_ID_FOR_STORE = 'vendure-plugin-geo-block';
 
 const loggerCtx = 'GeoBlockController';
 
@@ -174,6 +175,46 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             return true;
         }
         return false;
+    }
+
+
+    private licenceStore = new LicenceStore((sql: string, params?: any[]) => this.connection.rawConnection.query(sql, params));
+
+    /** Licence/evaluation state for the admin banner. */
+    @Get('licence/status')
+    async licenceState(@Ctx() ctx: RequestContext, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, false)) return;
+        const licence = GeoBlockPlugin.getLicenceStatus();
+        const ev = GeoBlockPlugin.getEvalState();
+        return res.json({
+            licensed: !!licence?.valid,
+            licenceMessage: licence?.valid ? '' : (licence?.message || 'No licence key configured'),
+            tier: licence?.valid ? 'paid' : (ev?.active ? 'trial' : 'free'),
+            eval: ev,
+        });
+    }
+
+    /** Admin-UI licence activation: paste-a-key, verified with the exact
+     *  boot-time checks, applied immediately and persisted. */
+    @Post('licence/activate')
+    async licenceActivate(@Ctx() ctx: RequestContext, @Res() res: Response, @Body() body: any) {
+        if (!requireAdmin(ctx, res, true)) return;
+        const key = String(body?.key || '').trim();
+        if (!key) return res.status(400).json({ licensed: false, message: 'Paste your licence key first.' });
+        const status = GeoBlockPlugin.activateRuntimeLicence(key);
+        if (!status.valid) return res.status(400).json({ licensed: false, message: status.message || 'Invalid licence key.' });
+        await this.licenceStore.ensureTable();
+        await this.licenceStore.save(PLUGIN_ID_FOR_STORE, key);
+        return res.json({ licensed: true, message: status.message });
+    }
+
+    /** Remove an admin-activated key (env-configured keys unaffected). */
+    @Post('licence/deactivate')
+    async licenceDeactivate(@Ctx() ctx: RequestContext, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, true)) return;
+        await this.licenceStore.clear(PLUGIN_ID_FOR_STORE);
+        GeoBlockPlugin.deactivateRuntimeLicence();
+        return res.json({ licensed: false });
     }
 
     @Get('site-config')

@@ -60,6 +60,27 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
             </div>
         </vdr-page-block>
 
+        <vdr-page-block *ngIf="licMeta && !licMeta.licensed">
+            <div class="lic-banner">
+                <div *ngIf="licMeta.tier === 'trial'">
+                    <strong>⏳ Full-featured evaluation</strong> —
+                    <ng-container *ngIf="licMeta.eval?.daysRemaining != null">
+                        <strong>{{ licMeta.eval.daysRemaining }} day{{ licMeta.eval.daysRemaining === 1 ? '' : 's' }} left</strong> with everything enabled.
+                    </ng-container>
+                    <ng-container *ngIf="licMeta.eval?.daysRemaining == null">everything is enabled.</ng-container>
+                    Afterwards the plugin drops to the free tier.
+                </div>
+                <div *ngIf="licMeta.tier !== 'trial'">
+                    <strong>🔓 Free tier</strong> — your evaluation has ended. Premium features are paused; your configuration is kept and reactivates instantly with a key.
+                </div>
+                <div class="lic-actions">
+                    <input class="lic-key" type="text" placeholder="Paste licence key (eyJhbGciOi…)" [(ngModel)]="licKeyInput" [disabled]="licActivating">
+                    <button class="gbtn gbtn-primary gbtn-sm" (click)="activateLicence()" [disabled]="licActivating || !licKeyInput">{{ licActivating ? 'Verifying…' : 'Activate' }}</button>
+                    <a href="https://huloglobal.com/vendure-plugins/geo-block/" target="_blank" class="gbtn gbtn-outline gbtn-sm">Get a licence ↗</a>
+                </div>
+            </div>
+        </vdr-page-block>
+
         <!-- Help drawer — collapsed by default. Plain-English steps
              + docs + support links so operators don't have to context-
              switch to figure out what a control does. -->
@@ -514,6 +535,10 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         </vdr-page-block>
     `,
     styles: [`
+        .lic-banner { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:12px 16px; border-radius:10px; font-size:13px; background:var(--gb-tint-warn, #fef3c7); border:1px solid var(--gb-line-warn, #fcd34d); }
+        .lic-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        .lic-key { padding:5px 9px; border:1px solid var(--gb-ui-border, #d1d5db); border-radius:7px; font-size:12.5px; min-width:280px; background:#fff; color:#0f172a; }
+
         :host { display: block; color: var(--gb-strong); }
 
         /* ── Verified theme tokens ────────────────────────────────
@@ -991,7 +1016,39 @@ export class GeoBlockComponent implements OnInit {
         private cdr: ChangeDetectorRef,
     ) {}
 
+    licMeta: any = null;
+    licKeyInput = '';
+    licActivating = false;
+
+    loadLicMeta() {
+        this.http.get<any>('/geo-block/licence/status').subscribe({
+            next: m => { this.licMeta = m; this.cdr.markForCheck(); },
+            error: () => undefined,
+        });
+    }
+
+    activateLicence() {
+        const key = (this.licKeyInput || '').trim();
+        if (!key) return;
+        this.licActivating = true;
+        this.http.post<any>('/geo-block/licence/activate', { key }).subscribe({
+            next: r => {
+                this.licActivating = false;
+                this.licKeyInput = '';
+                this.notify.success(r?.message || 'Licence activated — all features enabled');
+                this.loadLicMeta();
+                this.cdr.markForCheck();
+            },
+            error: e => {
+                this.licActivating = false;
+                this.notify.error(e?.error?.message || 'That key did not validate — check it was copied completely');
+                this.cdr.markForCheck();
+            },
+        });
+    }
+
     ngOnInit() {
+        this.loadLicMeta();
         this.http.get<{ presets: PresetMeta[] }>('/geo-block/presets').subscribe({
             next: r => { this.presets = r.presets || []; this.cdr.markForCheck(); },
             error: () => { /* presets are nice-to-have, not required */ },
