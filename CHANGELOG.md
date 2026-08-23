@@ -4,6 +4,14 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-08-23
+
+### Added
+- **Update notifications in the admin UI.** When a newer version is on
+  npm, a dismissible banner shows current → latest with a copy-ready
+  install command and a link to what's new. (Update data comes from the
+  existing daily registry check — no new network calls.)
+
 ## [0.9.0] — 2026-08-21
 
 ### Added

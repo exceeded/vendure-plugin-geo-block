@@ -60,6 +60,21 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
             </div>
         </vdr-page-block>
 
+        <vdr-page-block *ngIf="licMeta?.update?.updateAvailable && !updateDismissed">
+            <div class="lic-banner">
+                <div>
+                    <strong>⬆️ Update available</strong> —
+                    <!--email_off-->v{{ licMeta.update.current }} → <strong>v{{ licMeta.update.latest }}</strong><!--/email_off-->.
+                    Run <code class="upd-cmd">npm install &#64;huloglobal/vendure-plugin-geo-block&#64;{{ licMeta.update.latest }}</code> and restart, or see the changelog.
+                </div>
+                <div class="lic-actions">
+                    <button class="gbtn gbtn-outline gbtn-sm" (click)="copyUpdateCmd()">{{ cmdCopied ? 'Copied ✓' : 'Copy command' }}</button>
+                    <a href="https://huloglobal.com/vendure-plugins/geo-block/" target="_blank" class="gbtn gbtn-outline gbtn-sm">What&rsquo;s new ↗</a>
+                    <button class="gbtn gbtn-outline gbtn-sm" (click)="updateDismissed = true">Dismiss</button>
+                </div>
+            </div>
+        </vdr-page-block>
+
         <vdr-page-block *ngIf="licMeta && !licMeta.licensed">
             <div class="lic-banner">
                 <div *ngIf="licMeta.tier === 'trial'">
@@ -537,6 +552,8 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
     styles: [`
         .lic-banner { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:12px 16px; border-radius:10px; font-size:13px; background:var(--gb-tint-warn, #fef3c7); border:1px solid var(--gb-line-warn, #fcd34d); }
         .lic-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        .upd-cmd { font-family: monospace; font-size: 12px; background: rgba(0,0,0,.06); padding: 2px 6px; border-radius: 5px; }
+        [data-theme='dark'] .upd-cmd, :host-context([data-theme='dark']) .upd-cmd { background: rgba(255,255,255,.1); }
         .lic-key { padding:5px 9px; border:1px solid var(--gb-ui-border, #d1d5db); border-radius:7px; font-size:12.5px; min-width:280px; background:#fff; color:#0f172a; }
 
         :host { display: block; color: var(--gb-strong); }
@@ -1019,6 +1036,17 @@ export class GeoBlockComponent implements OnInit {
     licMeta: any = null;
     licKeyInput = '';
     licActivating = false;
+    updateDismissed = false;
+    cmdCopied = false;
+
+    copyUpdateCmd() {
+        const cmd = `npm install &#64;huloglobal/vendure-plugin-geo-block@${this.licMeta?.update?.latest || 'latest'}`;
+        navigator.clipboard?.writeText(cmd).then(() => {
+            this.cmdCopied = true;
+            this.cdr.markForCheck();
+            setTimeout(() => { this.cmdCopied = false; this.cdr.markForCheck(); }, 2500);
+        });
+    }
 
     loadLicMeta() {
         this.http.get<any>('/geo-block/licence/status').subscribe({
