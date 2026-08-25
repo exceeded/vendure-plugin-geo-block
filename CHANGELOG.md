@@ -4,6 +4,16 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-08-25
+
+### Added
+- **PostgreSQL support.** All of the plugin's SQL now runs on Postgres as
+  well as MySQL/MariaDB — the licence SDK's new dialect adapter translates
+  queries transparently at runtime, so no configuration is needed: the
+  plugin follows whatever database your Vendure `dbConnectionOptions` use.
+  Verified against PostgreSQL 17. MySQL/MariaDB installs are unaffected
+  (byte-identical passthrough).
+
 ## [0.10.1] — 2026-08-25
 
 ### Changed

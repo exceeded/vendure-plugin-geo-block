@@ -16,7 +16,7 @@ import { Injectable } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { gql } from 'graphql-tag';
 import { Allow, Ctx, Permission, RequestContext, TransactionalConnection } from '@vendure/core';
-import { isLicensed, premiumFeatureError } from '@huloglobal/vendure-licence-sdk';
+import { isLicensed, premiumFeatureError, adapterFor } from '@huloglobal/vendure-licence-sdk';
 import {
     FREE_TIER_PRESET_KEYS,
     isAllowed,
@@ -141,7 +141,7 @@ export class GeoBlockAdminResolver {
     @Allow(Permission.ReadCatalog)
     async geoBlockChannels(@Ctx() ctx: RequestContext): Promise<any[]> {
         // Channel-scoped: only return the channels the caller can see.
-        const rows = await this.connection.rawConnection.query(
+        const rows = await adapterFor(this.connection.rawConnection).query(
             `SELECT id AS channelId, token AS channelToken, code AS channelName,
                     customFields_huloGeoBlockEnabled       AS enabled,
                     customFields_huloGeoBlockMode          AS mode,
@@ -184,7 +184,7 @@ export class GeoBlockAdminResolver {
         const days = Math.min(Math.max(Number(daysInput) || 30, 1), 365);
         const where = `channelId = ? AND createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)`;
         const params = [channelId, days];
-        const totals = await this.connection.rawConnection.query(
+        const totals = await adapterFor(this.connection.rawConnection).query(
             `SELECT COUNT(*) AS totalEvents,
                     SUM(decision = 'block')      AS blocked,
                     SUM(decision = 'soft-block') AS softBlocked,
@@ -192,12 +192,12 @@ export class GeoBlockAdminResolver {
              FROM geo_block_event WHERE ${where}`,
             params,
         );
-        const topCountries = await this.connection.rawConnection.query(
+        const topCountries = await adapterFor(this.connection.rawConnection).query(
             `SELECT country, COUNT(*) AS n FROM geo_block_event WHERE ${where}
              GROUP BY country ORDER BY n DESC LIMIT 20`,
             params,
         );
-        const daily = await this.connection.rawConnection.query(
+        const daily = await adapterFor(this.connection.rawConnection).query(
             `SELECT DATE(createdAt) AS day, COUNT(*) AS n FROM geo_block_event WHERE ${where}
              GROUP BY day ORDER BY day`,
             params,
@@ -239,9 +239,10 @@ export class GeoBlockAdminResolver {
         push('customFields_huloGeoBlockIpAllowlist', input.ipAllowlist);
         if (!set.length) throw new Error('no fields to update');
         params.push(input.channelToken);
-        const result = await this.connection.rawConnection.query(
+        const result = await adapterFor(this.connection.rawConnection).query(
             `UPDATE channel SET ${set.join(', ')} WHERE token = ?`,
             params,
+            { needAffected: true },
         );
         if (!(result as any).affectedRows) throw new Error('channel not found');
         const rows = await this.geoBlockChannels(ctx);
@@ -254,7 +255,7 @@ export class GeoBlockAdminResolver {
         if (!GeoBlockPlugin.hasPremiumAccess()) {
             throw new Error(premiumFeatureError('vendure-plugin-geo-block').message);
         }
-        const rows = await this.connection.rawConnection.query(
+        const rows = await adapterFor(this.connection.rawConnection).query(
             `SELECT customFields_huloGeoBlockEnabled  AS enabled,
                     customFields_huloGeoBlockAllowed  AS allowedCountries,
                     customFields_huloGeoBlockBlocked  AS blockedCountries,

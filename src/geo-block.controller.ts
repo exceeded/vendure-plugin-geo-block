@@ -6,7 +6,7 @@ import {
     premiumFeatureError,
     RateLimiter,
     startRetentionSweeper,
-    verifySignedValue, LicenceStore, performSelfUpdate, selfUpdateEnv } from '@huloglobal/vendure-licence-sdk';
+    verifySignedValue, LicenceStore, performSelfUpdate, selfUpdateEnv, adapterFor } from '@huloglobal/vendure-licence-sdk';
 import { Ctx, Logger, Permission, RequestContext, TransactionalConnection } from '@vendure/core';
 import { Request, Response } from 'express';
 import { GeoBlockEvent } from './geo-block-event.entity';
@@ -153,7 +153,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         this.limiter = new RateLimiter({ capacity: rl.capacity, windowMs: rl.windowMs });
         if (opts.retention) {
             this.stopRetention = startRetentionSweeper({
-                getConnection: () => this.connection.rawConnection,
+                getConnection: () => adapterFor(this.connection.rawConnection),
                 table: 'geo_block_event',
                 options: opts.retention,
                 label: 'geo-block',
@@ -178,7 +178,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     }
 
 
-    private licenceStore = new LicenceStore((sql: string, params?: any[]) => this.connection.rawConnection.query(sql, params));
+    private licenceStore = new LicenceStore((sql: string, params?: any[]) => adapterFor(this.connection.rawConnection).query(sql, params));
 
     /** Licence/evaluation state for the admin banner. */
     @Get('licence/status')
@@ -446,7 +446,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     @Get('admin/channels')
     async listChannels(@Ctx() ctx: RequestContext, @Res() res: Response) {
         if (!requireAdmin(ctx, res, false)) return;
-        const rows = await this.connection.rawConnection.query(
+        const rows = await adapterFor(this.connection.rawConnection).query(
             `SELECT id, code, token,
                     COALESCE(customFieldsGeoblockenabled, 0)       AS geoBlockEnabled,
                     customFieldsGeoblockmode                       AS geoBlockMode,
@@ -522,7 +522,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             }
             return JSON.stringify(out);
         };
-        const updated = await this.connection.rawConnection.query(
+        const updated = await adapterFor(this.connection.rawConnection).query(
             `UPDATE channel
              SET customFieldsGeoblockenabled = ?,
                  customFieldsGeoblockmode = ?,
@@ -550,6 +550,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
                 String(body.blockLogoUrl || '').slice(0, 2048),
                 body.token,
             ],
+            { needAffected: true },
         );
         if (!updated.affectedRows) return res.status(404).json({ error: 'channel not found' });
         return res.json({ ok: true });
@@ -573,13 +574,13 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             : 'createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)';
         const params = channelId ? [days, channelId] : [days];
 
-        const top = await this.connection.rawConnection.query(
+        const top = await adapterFor(this.connection.rawConnection).query(
             `SELECT country, COUNT(*) AS n
              FROM geo_block_event WHERE ${where}
              GROUP BY country ORDER BY n DESC LIMIT 20`,
             params,
         );
-        const series = await this.connection.rawConnection.query(
+        const series = await adapterFor(this.connection.rawConnection).query(
             `SELECT DATE(createdAt) AS day,
                     SUM(decision='block') AS blocked,
                     SUM(decision='soft-block') AS softBlocked
@@ -587,7 +588,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
              GROUP BY DATE(createdAt) ORDER BY day`,
             params,
         );
-        const totals = await this.connection.rawConnection.query(
+        const totals = await adapterFor(this.connection.rawConnection).query(
             `SELECT
                 SUM(decision='block') AS blocked,
                 SUM(decision='soft-block') AS softBlocked,
@@ -596,7 +597,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
              FROM geo_block_event WHERE ${where}`,
             params,
         );
-        const reasons = await this.connection.rawConnection.query(
+        const reasons = await adapterFor(this.connection.rawConnection).query(
             `SELECT reason, COUNT(*) AS n
              FROM geo_block_event WHERE ${where}
              GROUP BY reason ORDER BY n DESC`,
@@ -647,9 +648,10 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     async gc(@Ctx() ctx: RequestContext, @Body() body: any, @Res() res: Response) {
         if (!requireAdmin(ctx, res, true)) return;
         const olderThanDays = Math.max(1, parseInt(body?.olderThanDays || '90', 10) || 90);
-        const result = await this.connection.rawConnection.query(
+        const result = await adapterFor(this.connection.rawConnection).query(
             `DELETE FROM geo_block_event WHERE createdAt < DATE_SUB(NOW(), INTERVAL ? DAY)`,
             [olderThanDays],
+            { needAffected: true },
         );
         return res.json({ deleted: result?.affectedRows ?? 0, olderThanDays });
     }
@@ -732,7 +734,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     // -- private helpers ---------------------------------------------------
 
     private async loadChannelRow(token: string): Promise<any | null> {
-        const rows = await this.connection.rawConnection.query(
+        const rows = await adapterFor(this.connection.rawConnection).query(
             `SELECT id, token,
                     customFieldsShowcompanynumber           AS showCompanyNumber,
                     customFieldsBusinesscompanynumber       AS companyNumber,

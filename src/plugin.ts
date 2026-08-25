@@ -1,5 +1,5 @@
 import { LanguageCode, PluginCommonModule, Type, VendurePlugin, TransactionalConnection } from '@vendure/core';
-import { fingerprintPublicKey, Heartbeat, LicenceStatus, RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence, warnIfIncompatibleVendure, EvaluationClient, EvaluationState, LicenceStore } from '@huloglobal/vendure-licence-sdk';
+import { fingerprintPublicKey, Heartbeat, LicenceStatus, RetentionOptions, RevocationChecker, UpdateChecker, verifyLicence, warnIfIncompatibleVendure, EvaluationClient, EvaluationState, LicenceStore, adapterFor } from '@huloglobal/vendure-licence-sdk';
 import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
 import { GeoBlockAdminResolver, geoBlockAdminApiSchema } from './admin-api';
@@ -237,7 +237,7 @@ export class GeoBlockPlugin {
     async onApplicationBootstrap() {
         if (GeoBlockPlugin.licenceStatus?.valid) return;
         try {
-            const store = new LicenceStore((sql, params) => this.connection.rawConnection.query(sql, params));
+            const store = new LicenceStore((sql, params) => adapterFor(this.connection.rawConnection).query(sql, params));
             await store.ensureTable();
             const stored = await store.load(PLUGIN_ID);
             if (stored) {
