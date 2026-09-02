@@ -4,6 +4,12 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] — 2026-09-02
+
+### Changed
+- **Licence SDK ^0.11.0.** Master licences (one key that activates every HULO plugin) and hardware-bound keys are now accepted by the runtime licence check.
+- **Branding.** Refreshed HULO Global logo (inline HG monogram) in the admin UI.
+
 ## [0.11.0] — 2026-08-25
 
 ### Added
