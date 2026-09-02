@@ -19,9 +19,9 @@ Maintained by Wayne Garrison.
 
 ## Buy
 
-14-day fully-featured evaluation, then **£4.95/month**, or **£99 one-off lifetime** at
+14-day free trial (card required, start it from the admin — nothing charged until day 15), then **£4.95/month**, or **£99 one-off lifetime** at
 [elite.charity/licence/buy/vendure-plugin-geo-block](https://elite.charity/licence/buy/vendure-plugin-geo-block).
-Or click **Buy licence** in the plugin's admin page — checkout opens in a new tab and the key installs itself.
+Start the trial (or buy) from the plugin's admin page — checkout opens in a new tab and the key installs itself.
 
 ## Install
 
