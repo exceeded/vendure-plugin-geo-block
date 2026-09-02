@@ -4,6 +4,11 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] — 2026-09-02
+
+### Changed
+- **Pricing.** Geo-block is now £4.95/month, £49.50/year or £99 lifetime (was £9.95 / £99.50 / £199). README updated; the 14-day evaluation is unchanged.
+
 ## [0.11.1] — 2026-09-02
 
 ### Changed
