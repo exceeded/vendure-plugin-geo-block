@@ -41,7 +41,7 @@
     "@huloglobal/vendure-licence-sdk": "^0.14.0",
     "@nestjs/common": "^10.0.0",
     "@vendure/core": "^3.7.3",
-    "typeorm": "^0.3.0",
+    "typeorm": "^1.1.1",
     "typescript": "^5.4.0"
   },
   "keywords": [
