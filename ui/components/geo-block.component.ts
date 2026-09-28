@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, ChangeDetectorRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { NotificationService } from '@vendure/admin-ui/core';
+import { resolveAllowedClient } from '../resolve-allowed';
 
 interface ChannelRow {
     id: number;
@@ -22,7 +23,7 @@ interface ChannelRow {
 
 interface SubdivisionDef { code: string; label: string; }
 
-interface PresetMeta { key: string; label: string; kind: string; description: string; countryCount: number | null; }
+interface PresetMeta { key: string; label: string; kind: string; description: string; countryCount: number | null; countries?: string[] | null; }
 
 @Component({
     selector: 'ees-geo-block',
@@ -1213,7 +1214,14 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
         this.checkClaim(false);
         this.loadLicMeta();
         this.http.get<{ presets: PresetMeta[] }>('/geo-block/presets').subscribe({
-            next: r => { this.presets = r.presets || []; this.cdr.markForCheck(); },
+            next: r => {
+                this.presets = r.presets || [];
+                this.presetCatalogue = {};
+                for (const p of this.presets) {
+                    if (p.countries !== undefined) this.presetCatalogue[String(p.key).toUpperCase()] = p.countries;
+                }
+                this.cdr.markForCheck();
+            },
             error: () => { /* presets are nice-to-have, not required */ },
         });
         this.http.get<{ subdivisions: Record<string, SubdivisionDef[]> }>('/geo-block/subdivisions').subscribe({
@@ -1443,8 +1451,10 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
 
     countryLabel(cc: string): string { return cc; }
 
-    /** Local preview — uses the server-resolved allowed list when no
-     *  rule changes are pending. Best-effort otherwise. */
+    /** Preset key → countries (`null` = worldwide), from `/geo-block/presets`.
+     *  Drives the live preview: the allow-list is resolved in the browser
+     *  from the form state, not from the list the server computed at load. */
+    private presetCatalogue: Record<string, string[] | null> = {};
 
     /** True when the rules would block EVERY visitor — the state an
      *  operator most needs shouting about before they hit save. */
@@ -1489,10 +1499,24 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
         return Math.max(2, (Number(n) / max) * 100);
     }
 
+    /** Resolved allow-list for the rules as they are being edited (`null` =
+     *  anywhere). Mirrors the server's `resolveAllowedCountries`; a saved
+     *  preset the current tier cannot pick (absent from the catalogue) is
+     *  covered by the server-resolved list so the preview never under-reports. */
     resolvedAllowed(): string[] | null {
         if (!this.current) return [];
         if (this.current.allowedRegions.includes('WORLDWIDE')) return null;
-        return this.current.resolved?.allowedCountries ?? null;
+        if (!Object.keys(this.presetCatalogue).length) {
+            // Catalogue not loaded yet: fall back to the server's snapshot.
+            return this.current.resolved?.allowedCountries ?? null;
+        }
+        return resolveAllowedClient({
+            regions: this.current.allowedRegions,
+            extraAllowed: this.current.extraAllowed,
+            blocked: this.current.blockedCountries,
+            catalogue: this.presetCatalogue,
+            serverResolved: this.current.resolved?.allowedCountries ?? null,
+        }).allowed;
     }
 
     markDirty() { this.dirty = true; }

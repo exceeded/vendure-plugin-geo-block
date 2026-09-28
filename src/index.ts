@@ -12,6 +12,7 @@ export {
     REGION_PRESETS,
     RegionPresetMeta,
     GeoRegionKey,
+    presetCountries,
     resolveAllowedCountries,
     isAllowed,
     ipMatchesAny,

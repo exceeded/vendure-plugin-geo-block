@@ -4,6 +4,35 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.3] — 2026-09-28
+
+Follow-up to the 0.13.2 hardening pass.
+
+### Added
+- **Per-install audit-IP salt.** When `ipSalt` is unset, a random salt is
+  generated once at boot and stored in `hulo_licence_store` (key
+  `vendure-plugin-geo-block:ipsalt`, first writer wins so server and
+  worker agree) instead of hashing every install's audit IPs with the same
+  public constant. A boot warning says a generated salt is in use.
+- **Live allow-list preview.** `GET /geo-block/presets` now includes each
+  preset's `countries`; the admin page resolves the allow-list, the status
+  sentence and the lockout warning in the browser from the form state
+  (`ui/resolve-allowed.ts`, unit-tested against the server resolver)
+  instead of the list the server computed at load time.
+- Postgres corpus test (`src/pg-corpus.test.ts`, runs when `HULO_PG_URL`
+  is set): every raw SQL statement in `src/` is translated by the dialect
+  adapter and executed against PostgreSQL 17 with TypeORM-quoted stand-ins
+  for `channel` and `geo_block_event`.
+- `presetCountries(key)` is exported.
+
+### Fixed
+- **Unlicensed `site-config` contract.** The public `site-config` never
+  applied the free-tier gate that `/check` applied (`mode=block`, no
+  subdivisions), so a storefront caching `site-config` could render the
+  soft-block banner while `/check` blocked. The gate now lives in
+  `buildConfig`, so `site-config`, `check` and the simulator agree. The
+  README and e2e no longer claim the free tier returns `enabled:false`.
+
 ## [0.13.2] — 2026-09-28
 
 Reliability and security pass — no new features.

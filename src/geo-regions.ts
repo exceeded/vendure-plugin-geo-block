@@ -146,6 +146,14 @@ const REGION_TO_COUNTRIES: Record<GeoRegionKey, readonly string[] | null> = {
     WORLDWIDE: null,
 };
 
+/** Countries of one preset (`null` for WORLDWIDE, `[]` for an unknown key). */
+export function presetCountries(key: string): string[] | null {
+    const k = String(key || '').trim().toUpperCase() as GeoRegionKey;
+    if (!(k in REGION_TO_COUNTRIES)) return [];
+    const list = REGION_TO_COUNTRIES[k];
+    return list ? Array.from(list) : null;
+}
+
 /**
  * Human-readable metadata for each preset, for the admin UI.
  * `kind` groups presets in the picker UI ("Trade blocs", "Geography", etc).

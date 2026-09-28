@@ -22,8 +22,10 @@ export interface GeoBlockPluginOptions {
     /** Public-facing host of the Vendure server. Used in licence domain
      *  matching — must match one of the JWT's `allowedDomains`. */
     publicBaseUrl: string;
-    /** JWT licence key. Without it, the public site-config endpoint still
-     *  resolves the rules but always returns `enabled: false`. */
+    /** JWT licence key. Without one (after the 14-day evaluation) the rules
+     *  are still enforced, but on the free tier: `mode` is forced to `block`
+     *  (no soft-block banner) and subdivision rules are ignored on the public
+     *  `site-config` and `check` endpoints; no audit log is written. */
     licenceKey?: string;
     /** Optional scheduled-maintenance window. When the current time falls
      *  inside this window the `/geo-block/check` endpoint refuses every
@@ -39,7 +41,11 @@ export interface GeoBlockPluginOptions {
     trustedIpHeaders?: Array<'cf-connecting-ip' | 'true-client-ip' | 'x-real-ip' | 'x-forwarded-for'>;
     /** Rate limit for public endpoints, keyed by IP. Default 120/60s. */
     rateLimit?: { capacity: number; windowMs: number };
-    /** Per-install salt for hashing IPs stored in the audit log. */
+    /** Per-install salt for hashing IPs stored in the audit log. When unset
+     *  a random salt is generated once at boot and persisted in
+     *  `hulo_licence_store` (key `vendure-plugin-geo-block:ipsalt`) so the
+     *  server and the worker hash alike; set it explicitly to keep hashes
+     *  comparable across reinstalls or database restores. */
     ipSalt?: string;
     /** Store hashed IPs in `geo_block_event.ip` instead of raw. Default true. */
     hashAuditIps?: boolean;

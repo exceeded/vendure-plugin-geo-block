@@ -48,7 +48,7 @@ export const config: VendureConfig = {
             // -- Security (recommended in production) --
             signingSecret: process.env.HULO_GEO_BLOCK_SIGNING_SECRET,
             hashAuditIps: true,
-            ipSalt: process.env.HULO_IP_SALT,
+            ipSalt: process.env.HULO_IP_SALT, // unset: a per-install salt is generated once and stored in the DB
             rateLimit: { capacity: 120, windowMs: 60_000 },
 
             // -- Retention (opt-in) --
@@ -67,6 +67,12 @@ Add `GeoBlockPlugin.uiExtensions` to your `compileUiExtensions` config.
 > Audit rows are pruned after 90 days / 500 000 rows by default
 > (`retention: false` keeps everything).
 
+> **Unlicensed / after the evaluation:** saved rules are still enforced on
+> `/geo-block/site-config` and `/geo-block/check`, but on the free tier —
+> `mode` is always `block` (no soft-block banner), subdivision rules are
+> ignored, only the 5 free presets can be picked, and no audit log is
+> written. The public `site-config` and `check` apply the same gate.
+
 ## Feature tour
 
 ### 37 region presets
@@ -82,8 +88,11 @@ One-click bundles in five groups:
 - **Language / cultural**: DACH, ENGLISH_SPEAKING, COMMONWEALTH
 - **Everywhere**: WORLDWIDE (with the denylist still applied)
 
-`GET /geo-block/presets` returns the live catalogue with country counts
-and descriptions.
+`GET /geo-block/presets` returns the live catalogue with country counts,
+descriptions and each preset's `countries` (`null` for WORLDWIDE). The
+admin page resolves the allow-list in the browser from that catalogue, so
+the "Allow visitors from N countries" preview and the lockout warning
+follow every edit before you save.
 
 ### Per-channel rules
 
@@ -136,7 +145,10 @@ Saves a MaxMind lookup per request.
 
 - `signingSecret` HMAC-gates the `?country=` override on `/check` so
   storefront staff (or attackers) can't spoof a location at will.
-- Audit IPs are SHA-256 hashed by default.
+- Audit IPs are SHA-256 hashed by default with `ipSalt`; when it is unset a
+  random per-install salt is generated once and kept in `hulo_licence_store`
+  (key `vendure-plugin-geo-block:ipsalt`), shared by server and worker. Set
+  `ipSalt` to keep hashes comparable across reinstalls or DB restores.
 - Rate limiter on every public endpoint.
 - Security headers via the licence-sdk helper on every response.
 
@@ -146,7 +158,7 @@ Saves a MaxMind lookup per request.
 | --- | --- | --- | --- |
 | `GET` | `/geo-block/site-config` | public | resolved channel rules (cache client-side) |
 | `GET` | `/geo-block/check` | public | per-request decision + reason (logs to audit) |
-| `GET` | `/geo-block/presets` | public | 37-preset catalogue |
+| `GET` | `/geo-block/presets` | public | 37-preset catalogue (with `countries`) |
 | `GET` | `/geo-block/subdivisions` | public | subdivision catalogue (11 countries) |
 | `GET` | `/geo-block/admin/channels` | admin | list channels + rules |
 | `POST` | `/geo-block/admin/save` | admin | save a channel's rules |

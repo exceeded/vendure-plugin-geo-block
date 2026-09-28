@@ -16,8 +16,10 @@ import {
     ipMatchesAny,
     FREE_TIER_PRESET_KEYS,
     REGION_PRESETS,
+    presetCountries,
     resolveAllowedCountries,
 } from './geo-regions';
+import { ensureStoredSecret } from './stored-secret';
 import { GeoBlockPlugin, getOptions } from './plugin';
 import { getRealIp, getResolvedCountry, getResolvedRegion, normaliseIp } from './proxy-headers';
 import { isAllowlistedBot, matchedBotEntry } from './bot-detect';
@@ -25,8 +27,13 @@ import { BusinessHoursSchedule, checkSchedule } from './schedule';
 import { buildHuloGeoJs, buildBlockedPageHtml } from './storefront-assets';
 
 const PLUGIN_ID_FOR_STORE = 'vendure-plugin-geo-block';
+const IP_SALT_STORE_KEY = 'vendure-plugin-geo-block:ipsalt';
+const LEGACY_IP_SALT = 'hulo-geo-block-default-salt';
 
 const loggerCtx = 'GeoBlockController';
+
+/** Per-install audit-IP salt resolved at boot when `ipSalt` is not configured (cached per process). */
+let generatedIpSalt: string | null = null;
 
 /** JSON.parse a value from a channel row's `text` field, tolerating
  *  null / empty. Returns null on any parse failure. */
@@ -151,10 +158,11 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
 
     constructor(private connection: TransactionalConnection, private processContext: ProcessContext) {}
 
-    onApplicationBootstrap(): void {
+    async onApplicationBootstrap(): Promise<void> {
         const opts = getOptions();
         const rl = opts.rateLimit || { capacity: 120, windowMs: 60_000 };
         this.limiter = new RateLimiter({ capacity: rl.capacity, windowMs: rl.windowMs });
+        await this.resolveIpSalt();
         // Only the server answers HTTP; the worker must not run a second sweeper / claim poller.
         if (this.processContext.isWorker) return;
         void this.purchaseClaimClient().resume();
@@ -173,6 +181,25 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     onModuleDestroy(): void {
         this.stopRetention?.();
         this.stopRetention = null;
+    }
+
+    /** Without `ipSalt`, every install used to hash audit IPs with the same
+     *  public constant, so a hash could be matched against a candidate address.
+     *  Generate a random salt once, persist it next to the licence key, and
+     *  reuse it in every process (server and worker read the same row). */
+    private async resolveIpSalt(): Promise<void> {
+        if (getOptions().ipSalt || generatedIpSalt) return;
+        const salt = await ensureStoredSecret(
+            this.licenceStore,
+            (sql, params, o) => adapterFor(this.connection.rawConnection).query(sql, params, o),
+            IP_SALT_STORE_KEY,
+        );
+        if (salt) {
+            generatedIpSalt = salt;
+            Logger.warn(`geo-block: no ipSalt configured — audit IPs are hashed with a generated per-install salt stored in hulo_licence_store (${IP_SALT_STORE_KEY}); set ipSalt to keep hashes comparable across reinstalls`, loggerCtx);
+        } else {
+            Logger.warn('geo-block: no ipSalt configured and the licence store is unavailable — audit IPs are hashed with the built-in default salt', loggerCtx);
+        }
     }
 
     private rateLimited(req: Request, res: Response, bucket: string): boolean {
@@ -343,17 +370,10 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         if (!token) return res.json({ allowed: true, reason: 'no-channel' });
         const row = await this.loadChannelRow(token);
         if (!row) return res.json({ allowed: true, reason: 'unknown-channel' });
+        // `buildConfig` applies the tier gate (unlicensed: mode=block, no
+        // subdivisions) so `/check` and the public `/site-config` agree.
         const cfg = this.buildConfig(token, row);
-
-        // Tier-gate: unlicensed installs force `mode=block` (no soft-
-        // block / banner-only mode) and ignore the saved subdivision
-        // map. The block decision itself still runs so the free tier
-        // is genuinely useful — just narrower.
         const licensed = GeoBlockPlugin.hasPremiumAccess();
-        if (!licensed) {
-            cfg.geoBlock.mode = 'block';
-            cfg.geoBlock.allowedSubdivisions = {};
-        }
 
         const opts = getOptions();
         const ip = getRealIp(req, opts.trustedIpHeaders);
@@ -483,8 +503,10 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         // Unlicensed callers get only the 5 free-tier presets. Each
         // preset is also annotated with `requiresLicence` so the admin
         // UI can show a small lock icon next to gated rows.
+        // `countries` lets the admin UI resolve the allow-list live while editing.
         const presets = REGION_PRESETS.map(p => ({
             ...p,
+            countries: presetCountries(p.key),
             requiresLicence: !FREE_TIER_PRESET_KEYS.includes(p.key),
         }));
         return res.json({
@@ -880,6 +902,12 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         return rows[0] || null;
     }
 
+    /** Rules for one channel as the storefront and `/check` see them.
+     *  Tier gate: unlicensed installs (evaluation expired) force
+     *  `mode=block` (no soft-block banner) and ignore the saved
+     *  subdivision map. The block decision itself still runs so the free
+     *  tier is genuinely useful — just narrower. Applied here so the
+     *  public `/site-config`, `/check` and the simulator never disagree. */
     private buildConfig(token: string, r: any): SiteConfig {
         const allowedRegions = parseList(r.allowedRegions);
         const extraAllowed = parseList(r.extraAllowed, ['GB']);
@@ -889,16 +917,17 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             extraAllowed,
             blocked: blockedCountries,
         });
+        const licensed = GeoBlockPlugin.hasPremiumAccess();
         return {
             channelToken: token,
             geoBlock: {
                 enabled: !!Number(r.geoBlockEnabled || 0),
-                mode: (r.geoBlockMode === 'soft' ? 'soft' : 'block'),
+                mode: (licensed && r.geoBlockMode === 'soft' ? 'soft' : 'block'),
                 allowedCountries: resolved.allowed,
                 blockedCountries: resolved.blocked,
                 // No default UK regions — hidden unless explicitly configured.
                 allowedGbRegions: parseList(r.allowedGbRegions, []),
-                allowedSubdivisions: parseSubdivisions(r.allowedSubdivisionsJson),
+                allowedSubdivisions: licensed ? parseSubdivisions(r.allowedSubdivisionsJson) : {},
                 allowedRegions,
                 blockMessage: String(r.blockMessage || ''),
                 blockRedirectUrl: r.blockRedirectUrl || null,
@@ -912,12 +941,13 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     }
 
     /** Apply IP hashing when the plugin is configured to anonymise audit
-     *  rows. Default is to hash. */
+     *  rows. Default is to hash, with the configured `ipSalt`, else the
+     *  generated per-install salt, else (store unavailable) the legacy constant. */
     private maybeHashIp(ip: string | null): any {
         if (!ip) return null;
         const opts = getOptions();
         if (opts.hashAuditIps === false) return ip.slice(0, 64);
-        return hashIp(ip, opts.ipSalt || 'hulo-geo-block-default-salt');
+        return hashIp(ip, opts.ipSalt || generatedIpSalt || LEGACY_IP_SALT);
     }
 
     private async logEvent(input: {

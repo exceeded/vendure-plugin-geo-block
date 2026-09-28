@@ -31,10 +31,13 @@ describe('@huloglobal/vendure-plugin-geo-block', () => {
         const res = await fetch(`http://localhost:${PORT}/geo-block/site-config`);
         expect(res.status).toBe(200);
         const body = await res.json();
-        // Without a licence key, the plugin must always return enabled:false
-        // — verifies the unlicensed fail-open contract documented on init().
+        // No channel token → the defaults: geo-block off, mode block. (An
+        // unlicensed install still enforces saved rules; the free tier only
+        // forces mode=block and ignores subdivisions — same gate as /check.)
         expect(body).toHaveProperty('geoBlock');
         expect(body.geoBlock.enabled).toBe(false);
+        expect(body.geoBlock.mode).toBe('block');
+        expect(body.geoBlock.allowedSubdivisions).toEqual({});
     });
 
     it('admin endpoints reject anonymous calls', async () => {
@@ -52,6 +55,10 @@ describe('@huloglobal/vendure-plugin-geo-block', () => {
         expect(Array.isArray(body.presets)).toBe(true);
         const keys = body.presets.map((p: any) => p.key).sort();
         expect(keys).toEqual(['EU', 'NORTH_AMERICA', 'OCEANIA', 'UK_ONLY', 'WORLDWIDE'].sort());
+        // Each preset carries its countries so the admin UI can resolve the allow-list live.
+        const eu = body.presets.find((p: any) => p.key === 'EU');
+        expect(eu.countries).toHaveLength(27);
+        expect(body.presets.find((p: any) => p.key === 'WORLDWIDE').countries).toBeNull();
         // Premium presets must NOT leak to unlicensed callers.
         expect(keys).not.toContain('GCC');
         expect(keys).not.toContain('SCHENGEN');
