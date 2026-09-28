@@ -19,24 +19,34 @@ import { Request } from 'express';
  * isn't available — the caller should treat this as "unknown" and
  * skip IP-dependent enrichment rather than fail.
  */
-export function getRealIp(req: Request): string | null {
+export type TrustedIpHeader = 'cf-connecting-ip' | 'true-client-ip' | 'x-real-ip' | 'x-forwarded-for';
+
+/** `::ffff:203.0.113.5` → `203.0.113.5`; IPv6 lower-cased. */
+export function normaliseIp(ip: string | null | undefined): string | null {
+    const v = String(ip || '').trim();
+    if (!v) return null;
+    const m = v.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+    return (m ? m[1] : v).toLowerCase().slice(0, 64);
+}
+
+/**
+ * The visitor's IP. By default this is Express's `req.ip`, which honours
+ * the host's `trust proxy` setting and cannot be forged by the client.
+ * Vendor headers (`CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`,
+ * left-most `X-Forwarded-For`) are only consulted when the host opts in
+ * with `trustedIpHeaders` — otherwise anyone could send
+ * `X-Forwarded-For: <office IP>` and walk through the IP allowlist.
+ */
+export function getRealIp(req: Request, trusted: TrustedIpHeader[] = []): string | null {
     const headers = req.headers || {};
-    const cfIp = String(headers['cf-connecting-ip'] || '').trim();
-    if (cfIp) return cfIp;
-
-    const trueClient = String(headers['true-client-ip'] || '').trim();
-    if (trueClient) return trueClient;
-
-    const realIp = String(headers['x-real-ip'] || '').trim();
-    if (realIp) return realIp;
-
-    const xff = String(headers['x-forwarded-for'] || '').trim();
-    if (xff) {
-        const first = xff.split(',')[0]?.trim();
-        if (first) return first;
+    for (const name of trusted) {
+        const raw = String(headers[name] || '').trim();
+        if (!raw) continue;
+        const value = name === 'x-forwarded-for' ? raw.split(',')[0]?.trim() : raw;
+        const ip = normaliseIp(value);
+        if (ip) return ip;
     }
-
-    return (req as any).ip || null;
+    return normaliseIp((req as any).ip) || null;
 }
 
 /**

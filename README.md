@@ -60,6 +60,13 @@ export const config: VendureConfig = {
 
 Add `GeoBlockPlugin.uiExtensions` to your `compileUiExtensions` config.
 
+
+> **Visitor IP:** the plugin uses Express's `req.ip` (set `trustProxy` on the
+> Vendure host). Only list headers your edge sets and strips from clients in
+> `trustedIpHeaders`, e.g. `['cf-connecting-ip']` behind Cloudflare.
+> Audit rows are pruned after 90 days / 500 000 rows by default
+> (`retention: false` keeps everything).
+
 ## Feature tour
 
 ### 37 region presets

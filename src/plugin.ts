@@ -32,6 +32,11 @@ export interface GeoBlockPluginOptions {
     maintenanceWindow?: MaintenanceWindow;
 
     // ── Security ────────────────────────────────────────────────────────
+    /** Proxy headers that may override `req.ip` for the visitor address
+     *  (allowlist + rate limit). Only list what YOUR edge sets and strips
+     *  from clients, e.g. `['cf-connecting-ip']` behind Cloudflare. Default:
+     *  none — `req.ip` with Express `trust proxy` is used. */
+    trustedIpHeaders?: Array<'cf-connecting-ip' | 'true-client-ip' | 'x-real-ip' | 'x-forwarded-for'>;
     /** Rate limit for public endpoints, keyed by IP. Default 120/60s. */
     rateLimit?: { capacity: number; windowMs: number };
     /** Per-install salt for hashing IPs stored in the audit log. */
@@ -45,8 +50,8 @@ export interface GeoBlockPluginOptions {
     signingSecret?: string;
 
     // ── Retention ───────────────────────────────────────────────────────
-    /** Auto-prune `geo_block_event` rows older than `days` days. */
-    retention?: RetentionOptions;
+    /** Auto-prune `geo_block_event` rows. Default `{ days: 90, maxRows: 500000 }`; set `false` to keep everything. */
+    retention?: RetentionOptions | false;
 
     // ── SEO / bot allowlist ────────────────────────────────────────────
     /** Which `User-Agent`s bypass the geo-block. Default `'strict'` —

@@ -65,6 +65,18 @@ export interface ScheduleVerdict {
  * Pure function of the schedule + a Date — no globals, easily
  * testable with a fixed `now`.
  */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+/** One formatter per zone (building one per request is allocation-heavy); `hourCycle: 'h23'` avoids the `24:xx` quirk of `hour12: false`. */
+function formatterFor(tz: string): Intl.DateTimeFormat {
+    let f = FORMATTERS.get(tz);
+    if (!f) {
+        f = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
+        if (FORMATTERS.size > 100) FORMATTERS.clear();
+        FORMATTERS.set(tz, f);
+    }
+    return f;
+}
+
 export function checkSchedule(
     schedule: BusinessHoursSchedule | null | undefined,
     now: Date = new Date(),
@@ -86,13 +98,7 @@ export function checkSchedule(
     let localDay: IsoDay | null = null;
     let localTime: string | null = null;
     try {
-        const parts = new Intl.DateTimeFormat('en-GB', {
-            timeZone: tz,
-            weekday: 'short',
-            hour12: false,
-            hour: '2-digit',
-            minute: '2-digit',
-        }).formatToParts(now);
+        const parts = formatterFor(tz).formatToParts(now);
         const wd = parts.find(p => p.type === 'weekday')?.value ?? '';
         const hh = parts.find(p => p.type === 'hour')?.value ?? '00';
         const mm = parts.find(p => p.type === 'minute')?.value ?? '00';
@@ -113,8 +119,10 @@ export function checkSchedule(
 
     // Day-of-week filter. If `days` is set + doesn't include today,
     // we're out-of-hours regardless of the time.
-    if (Array.isArray(schedule.days) && schedule.days.length) {
-        if (!schedule.days.includes(localDay!)) {
+    // Operators type the JSON by hand: accept "1".."7" strings as well as numbers.
+    const days = Array.isArray(schedule.days) ? schedule.days.map(d => Number(d)).filter(d => d >= 1 && d <= 7) : [];
+    if (days.length) {
+        if (!days.includes(localDay!)) {
             return outOfHoursVerdict(schedule, localTime, localDay);
         }
     }

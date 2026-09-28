@@ -10,6 +10,7 @@ import { Column, Entity, Index } from 'typeorm';
  * top of it; older rows can be pruned with `GeoBlockController.gc()`.
  */
 @Entity()
+@Index('IDX_gbe_channel_created', ['channelId', 'createdAt'])
 export class GeoBlockEvent extends VendureEntity {
     constructor(input?: DeepPartial<GeoBlockEvent>) {
         super(input);

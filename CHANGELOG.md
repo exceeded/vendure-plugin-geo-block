@@ -4,6 +4,58 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.2] — 2026-09-28
+
+Reliability and security pass — no new features.
+
+### Fixed
+- **Client IP could be forged.** `/check` and the rate limiter trusted
+  `X-Forwarded-For`, `CF-Connecting-IP`, `True-Client-IP` and `X-Real-IP`
+  from any client, so anyone could send an allow-listed office address
+  and walk through the block. The visitor address is now Express's
+  `req.ip` (honouring the host's `trust proxy`); vendor headers are only
+  read when listed in the new `trustedIpHeaders` option. IPv4-mapped IPv6
+  addresses (`::ffff:…`) now match IPv4 allowlist entries; matching is
+  case-insensitive.
+- **Storefront helper blocked cross-origin.** `hulo-geo.js` carried
+  `Cross-Origin-Resource-Policy: same-origin`, so a storefront on a
+  different origin than the API could not load it. It is now
+  `cross-origin`.
+- **Postgres.** Channel custom-field columns and the audit table's
+  `createdAt`/`channelId` are quoted in raw SQL; `SUM(boolean)` replaced
+  with `SUM(CASE …)`; the enabled flag is bound as a boolean.
+- **GraphQL admin API** queried columns that do not exist
+  (`customFields_huloGeoBlock…`); `geoBlockChannels`, `geoBlockSaveChannel`
+  and `geoBlockSimulate` now use the real columns and the same JSON-array
+  storage as the REST routes.
+- `?country=`/`?region=` overrides must be plain ISO codes and, when a
+  `signingSecret` is set, both must be signed (`regionSig`).
+- `maintenanceWindow.allowedIps` is honoured; the simulator applies
+  subdivisions and reports schedule, bot and maintenance verdicts like
+  enforcement does.
+- Schedules typed with day numbers as strings no longer block every day;
+  the midnight hour can no longer render as `24:xx` (fail-open).
+- Self-update and licence activate/deactivate/purchase/portal require
+  SuperAdmin; `admin/stats` authenticates before revealing the tier.
+- Save validation: bounded lists, ISO country codes, known preset keys,
+  parseable IPs/CIDRs (prefix ≥ 8), http(s)-only redirect and logo URLs;
+  rejected values are returned in the response.
+
+### Changed
+- Audit rows are written with `insert` after the response (no longer
+  awaited); `url` now records the referring page instead of the API URL.
+- Retention defaults to 90 days / 500 000 rows (`retention: false` to
+  keep everything); a `(channelId, createdAt)` index is declared on
+  `geo_block_event` (run your migrations).
+- Channel rules are cached for 10 s in the server process; `/check`
+  answers `Cache-Control: no-store`; `/presets` and `/subdivisions` are
+  cacheable for an hour.
+- Bootstrap side effects (retention sweeper, claim poller) run on the
+  server only.
+- Admin UI: first-run "Worldwide" writes the canonical key (no false
+  lockout warning), the update banner is no longer shown twice, the copy
+  button copies a real `@`, timers are cleared on destroy.
+
 ## [0.13.1] — 2026-09-02
 
 ### Changed

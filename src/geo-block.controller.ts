@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Injectable, OnApplicationBootstrap, OnModuleDestroy, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, OnApplicationBootstrap, OnModuleDestroy, Post, Query, Req, Res } from '@nestjs/common';
 import {
     applySecurityHeaders,
     hashIp,
@@ -7,7 +7,7 @@ import {
     RateLimiter,
     startRetentionSweeper,
     verifySignedValue, LicenceStore, performSelfUpdate, selfUpdateEnv, adapterFor, PurchaseClaimClient, evalInstanceId, describeLicence } from '@huloglobal/vendure-licence-sdk';
-import { Ctx, Logger, Permission, RequestContext, TransactionalConnection } from '@vendure/core';
+import { Ctx, Logger, Permission, ProcessContext, RequestContext, TransactionalConnection } from '@vendure/core';
 import { Request, Response } from 'express';
 import { GeoBlockEvent } from './geo-block-event.entity';
 import { SUBDIVISIONS, hasSubdivisions } from './subdivisions';
@@ -19,7 +19,7 @@ import {
     resolveAllowedCountries,
 } from './geo-regions';
 import { GeoBlockPlugin, getOptions } from './plugin';
-import { getRealIp, getResolvedCountry, getResolvedRegion } from './proxy-headers';
+import { getRealIp, getResolvedCountry, getResolvedRegion, normaliseIp } from './proxy-headers';
 import { isAllowlistedBot, matchedBotEntry } from './bot-detect';
 import { BusinessHoursSchedule, checkSchedule } from './schedule';
 import { buildHuloGeoJs, buildBlockedPageHtml } from './storefront-assets';
@@ -46,12 +46,13 @@ function escapeHtml(s: string): string {
         .replace(/"/g, '&quot;');
 }
 
-function requireAdmin(ctx: RequestContext, res: Response, write = false): boolean {
+function requireAdmin(ctx: RequestContext, res: Response, write: boolean | 'super' = false): boolean {
     if (!ctx?.activeUserId) {
         res.status(401).json({ error: 'Authentication required' });
         return false;
     }
-    const needed = write ? [Permission.UpdateCatalog] : [Permission.ReadCatalog];
+    // 'super': self-update and licence changes affect the whole install.
+    const needed = write === 'super' ? [Permission.SuperAdmin] : write ? [Permission.UpdateCatalog] : [Permission.ReadCatalog];
     if (!ctx.userHasPermissions(needed)) {
         res.status(403).json({ error: 'Insufficient permissions' });
         return false;
@@ -144,19 +145,26 @@ const parseList = (raw: any, fallback: string[] = []): string[] => {
 export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestroy {
     private limiter: RateLimiter | null = null;
     private stopRetention: (() => void) | null = null;
+    /** Channel rules change rarely; `/check`, `/site-config` and `/blocked` read them per page view. */
+    private rowCache = new Map<string, { row: any; exp: number }>();
+    private static readonly ROW_TTL_MS = 10_000;
 
-    constructor(private connection: TransactionalConnection) {}
+    constructor(private connection: TransactionalConnection, private processContext: ProcessContext) {}
 
     onApplicationBootstrap(): void {
-        void this.purchaseClaimClient().resume();
         const opts = getOptions();
         const rl = opts.rateLimit || { capacity: 120, windowMs: 60_000 };
         this.limiter = new RateLimiter({ capacity: rl.capacity, windowMs: rl.windowMs });
-        if (opts.retention) {
+        // Only the server answers HTTP; the worker must not run a second sweeper / claim poller.
+        if (this.processContext.isWorker) return;
+        void this.purchaseClaimClient().resume();
+        if (!opts.signingSecret) Logger.warn('geo-block: no signingSecret — the ?country= override on /check is only honoured when it is a plain ISO code and nothing can verify who sent it', loggerCtx);
+        const retention = opts.retention === false ? null : (opts.retention || { days: 90, maxRows: 500_000 });
+        if (retention) {
             this.stopRetention = startRetentionSweeper({
                 getConnection: () => adapterFor(this.connection.rawConnection),
                 table: 'geo_block_event',
-                options: opts.retention,
+                options: retention,
                 label: 'geo-block',
             });
         }
@@ -168,7 +176,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     }
 
     private rateLimited(req: Request, res: Response, bucket: string): boolean {
-        const ip = (req.headers['cf-connecting-ip'] as string) || req.ip || '';
+        const ip = getRealIp(req, getOptions().trustedIpHeaders) || '';
         if (!ip || !this.limiter) return false;
         if (!this.limiter.allow(`${bucket}|${ip}`)) {
             res.setHeader('Retry-After', '60');
@@ -348,14 +356,17 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         }
 
         const opts = getOptions();
-        const ip = getRealIp(req);
+        const ip = getRealIp(req, opts.trustedIpHeaders);
+        res.setHeader('Cache-Control', 'no-store');
 
-        // Country override: when a `signingSecret` is configured, only
-        // honour `?country=XX` when paired with `?countrySig=<hmac>`.
-        // Without a secret, override is unconditionally honoured (legacy).
-        const queryCountry = String(req.query.country || '');
+        // Country / region override: with a `signingSecret` both must carry
+        // a matching signature; without one they are honoured only when they
+        // look like plain ISO codes (legacy behaviour, warned about at boot).
+        const queryCountry = String(req.query.country || '').trim().toUpperCase();
+        const queryRegion = String(req.query.region || '').trim().toUpperCase();
         let overrideCountry: string | null = null;
-        if (queryCountry) {
+        let overrideRegion: string | null = null;
+        if (queryCountry && /^[A-Z]{2}$/.test(queryCountry)) {
             if (opts.signingSecret) {
                 const sig = String(req.query.countrySig || '');
                 const verified = verifySignedValue(`${queryCountry}.${sig}`, opts.signingSecret);
@@ -364,10 +375,18 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
                 overrideCountry = queryCountry;
             }
         }
+        if (queryRegion && /^[A-Z0-9]{1,4}$/.test(queryRegion)) {
+            if (opts.signingSecret) {
+                const sig = String(req.query.regionSig || '');
+                const verified = verifySignedValue(`${queryRegion}.${sig}`, opts.signingSecret);
+                if (verified === queryRegion) overrideRegion = queryRegion;
+            } else {
+                overrideRegion = queryRegion;
+            }
+        }
         const country = overrideCountry || getResolvedCountry(req) || null;
-        const region = (req.query.region as string)
-            || getResolvedRegion(req)
-            || null;
+        const region = overrideRegion || getResolvedRegion(req) || null;
+        const referer = String(req.headers.referer || '').slice(0, 2048);
 
         const allowlist = parseList(row.ipAllowlist || '');
         const channelId = Number(row.id) || 1;
@@ -395,9 +414,9 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             const effectiveMode = licensed
                 ? (sv.action === 'soft' ? 'soft' : 'block')
                 : 'block';
-            await this.logEvent({
+            void this.logEvent({
                 channelId, country, region, ip,
-                ua, url: req.originalUrl,
+                ua, url: referer,
                 decision: effectiveMode === 'soft' ? 'soft-block' : 'block',
                 reason: 'schedule',
             });
@@ -411,11 +430,11 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             });
         }
         // 2. Scheduled maintenance window.
-        if (opts.maintenanceWindow && inWindow(opts.maintenanceWindow)) {
-            await this.logEvent({
+        if (opts.maintenanceWindow && inWindow(opts.maintenanceWindow) && !ipMatchesAny(ip, opts.maintenanceWindow.allowedIps || [])) {
+            void this.logEvent({
                 channelId, country, region, ip,
                 ua: req.headers['user-agent'] as string,
-                url: req.originalUrl,
+                url: referer,
                 decision: cfg.geoBlock.mode === 'soft' ? 'soft-block' : 'block',
                 reason: 'maintenance',
             });
@@ -436,10 +455,10 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             allowedSubdivisions: cfg.geoBlock.allowedSubdivisions,
         });
         if (!verdict.allowed) {
-            await this.logEvent({
+            void this.logEvent({
                 channelId, country, region, ip,
                 ua: req.headers['user-agent'] as string,
-                url: req.originalUrl,
+                url: referer,
                 decision: cfg.geoBlock.mode === 'soft' ? 'soft-block' : 'block',
                 reason: verdict.reason,
             });
@@ -459,6 +478,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      * and any storefront that wants to show "we serve <X>". */
     @Get('presets')
     presets(@Res() res: Response) {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         const licensed = GeoBlockPlugin.hasPremiumAccess();
         // Unlicensed callers get only the 5 free-tier presets. Each
         // preset is also annotated with `requiresLicence` so the admin
@@ -480,6 +500,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      *  (US states, CA provinces, AU states, DE Länder, etc.). */
     @Get('subdivisions')
     subdivisions(@Res() res: Response) {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         if (!GeoBlockPlugin.hasPremiumAccess()) {
             // Subdivision-level blocking is paid-only. Returning an
             // empty map keeps the admin UI's picker silent rather
@@ -509,17 +530,17 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         if (!requireAdmin(ctx, res, false)) return;
         const rows = await adapterFor(this.connection.rawConnection).query(
             `SELECT id, code, token,
-                    COALESCE(customFieldsGeoblockenabled, 0)       AS geoBlockEnabled,
-                    customFieldsGeoblockmode                       AS geoBlockMode,
-                    customFieldsGeoblockallowedregions             AS allowedRegions,
-                    customFieldsGeoblockallowedcountries           AS extraAllowed,
-                    customFieldsGeoblockblockedcountries           AS blockedCountries,
-                    customFieldsGeoblockallowedgbregions           AS allowedGbRegions,
-                    customFieldsGeoblockallowedsubdivisions        AS allowedSubdivisionsJson,
-                    customFieldsGeoblockipallowlist                AS ipAllowlist,
-                    customFieldsGeoblockblockmessage               AS blockMessage,
-                    customFieldsGeoblockblockredirecturl           AS blockRedirectUrl,
-                    customFieldsGeoblockblocklogourl               AS blockLogoUrl
+                    COALESCE(\`customFieldsGeoblockenabled\`, false) AS geoBlockEnabled,
+                    \`customFieldsGeoblockmode\`                       AS geoBlockMode,
+                    \`customFieldsGeoblockallowedregions\`             AS allowedRegions,
+                    \`customFieldsGeoblockallowedcountries\`           AS extraAllowed,
+                    \`customFieldsGeoblockblockedcountries\`           AS blockedCountries,
+                    \`customFieldsGeoblockallowedgbregions\`           AS allowedGbRegions,
+                    \`customFieldsGeoblockallowedsubdivisions\`        AS allowedSubdivisionsJson,
+                    \`customFieldsGeoblockipallowlist\`                AS ipAllowlist,
+                    \`customFieldsGeoblockblockmessage\`               AS blockMessage,
+                    \`customFieldsGeoblockblockredirecturl\`           AS blockRedirectUrl,
+                    \`customFieldsGeoblockblocklogourl\`               AS blockLogoUrl
              FROM channel
              ORDER BY id`,
         );
@@ -559,15 +580,38 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         if (!body?.token || typeof body.token !== 'string') {
             return res.status(400).json({ error: 'channel token required' });
         }
-        const normList = (v: any): string => {
+        // Validate what goes into the TEXT columns: bounded lists of known
+        // codes, parseable IPs/CIDRs (no /0 footgun), http(s) URLs only —
+        // a `javascript:` redirect would run in the storefront helper.
+        const rejected: string[] = [];
+        const normList = (v: any, valid?: (x: string) => boolean): string => {
             if (!Array.isArray(v)) return '[]';
-            const clean = v.filter(x => typeof x === 'string').map(x => x.trim().toUpperCase()).filter(Boolean);
-            return JSON.stringify(Array.from(new Set(clean)));
+            const clean = v.filter(x => typeof x === 'string').map(x => x.trim().toUpperCase()).filter(Boolean).slice(0, 500);
+            const kept = valid ? clean.filter(x => { const ok = valid(x); if (!ok) rejected.push(x); return ok; }) : clean;
+            return JSON.stringify(Array.from(new Set(kept)));
+        };
+        const isCountry = (x: string) => /^[A-Z]{2}$/.test(x);
+        const isPreset = (x: string) => x === 'WORLDWIDE' || REGION_PRESETS.some(p => String(p.key).toUpperCase() === x);
+        const isIpOrCidr = (x: string) => {
+            const [base, bits] = x.split('/');
+            const v4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(base) && base.split('.').every(o => Number(o) <= 255);
+            const v6 = /^[0-9a-f:]+$/i.test(base) && base.includes(':');
+            if (!v4 && !v6) return false;
+            if (bits === undefined) return true;
+            const n = Number(bits);
+            return Number.isInteger(n) && n >= 8 && n <= (v4 ? 32 : 128);
         };
         const normIpList = (v: any): string => {
             if (!Array.isArray(v)) return '[]';
-            const clean = v.filter(x => typeof x === 'string').map(x => x.trim()).filter(Boolean);
-            return JSON.stringify(Array.from(new Set(clean)));
+            const clean = v.filter(x => typeof x === 'string').map(x => x.trim().toLowerCase()).filter(Boolean).slice(0, 500);
+            const kept = clean.filter(x => { const ok = isIpOrCidr(x); if (!ok) rejected.push(x); return ok; });
+            return JSON.stringify(Array.from(new Set(kept)));
+        };
+        const httpUrl = (v: any): string => {
+            const u = String(v || '').trim().slice(0, 2048);
+            if (!u) return '';
+            if (!/^https?:\/\/[^\s]+$/i.test(u)) { rejected.push(u); return ''; }
+            return u;
         };
         const mode = body.mode === 'soft' ? 'soft' : 'block';
         // Subdivisions arrive as { "US": ["CA", "NY"], ... }. Normalise
@@ -585,36 +629,37 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         };
         const updated = await adapterFor(this.connection.rawConnection).query(
             `UPDATE channel
-             SET customFieldsGeoblockenabled = ?,
-                 customFieldsGeoblockmode = ?,
-                 customFieldsGeoblockallowedregions = ?,
-                 customFieldsGeoblockallowedcountries = ?,
-                 customFieldsGeoblockblockedcountries = ?,
-                 customFieldsGeoblockallowedgbregions = ?,
-                 customFieldsGeoblockallowedsubdivisions = ?,
-                 customFieldsGeoblockipallowlist = ?,
-                 customFieldsGeoblockblockmessage = ?,
-                 customFieldsGeoblockblockredirecturl = ?,
-                 customFieldsGeoblockblocklogourl = ?
+             SET \`customFieldsGeoblockenabled\` = ?,
+                 \`customFieldsGeoblockmode\` = ?,
+                 \`customFieldsGeoblockallowedregions\` = ?,
+                 \`customFieldsGeoblockallowedcountries\` = ?,
+                 \`customFieldsGeoblockblockedcountries\` = ?,
+                 \`customFieldsGeoblockallowedgbregions\` = ?,
+                 \`customFieldsGeoblockallowedsubdivisions\` = ?,
+                 \`customFieldsGeoblockipallowlist\` = ?,
+                 \`customFieldsGeoblockblockmessage\` = ?,
+                 \`customFieldsGeoblockblockredirecturl\` = ?,
+                 \`customFieldsGeoblockblocklogourl\` = ?
              WHERE token = ?`,
             [
-                body.enabled ? 1 : 0,
+                !!body.enabled,
                 mode,
-                normList(body.allowedRegions),
-                normList(body.extraAllowed),
-                normList(body.blockedCountries),
+                normList(body.allowedRegions, isPreset),
+                normList(body.extraAllowed, isCountry),
+                normList(body.blockedCountries, isCountry),
                 normList(body.allowedGbRegions),
                 normSubdivisions(body.allowedSubdivisions),
                 normIpList(body.ipAllowlist),
                 String(body.blockMessage || '').slice(0, 4000),
-                String(body.blockRedirectUrl || '').slice(0, 2048),
-                String(body.blockLogoUrl || '').slice(0, 2048),
+                httpUrl(body.blockRedirectUrl),
+                httpUrl(body.blockLogoUrl),
                 body.token,
             ],
             { needAffected: true },
         );
+        this.rowCache.delete(String(body.token));
         if (!updated.affectedRows) return res.status(404).json({ error: 'channel not found' });
-        return res.json({ ok: true });
+        return res.json({ ok: true, rejected });
     }
 
     /**
@@ -623,16 +668,17 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
      */
     @Get('admin/stats')
     async stats(@Ctx() ctx: RequestContext, @Req() req: Request, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, false)) return;
         if (!GeoBlockPlugin.hasPremiumAccess()) {
             return res.status(402).json(premiumFeatureError('vendure-plugin-geo-block'));
         }
-        if (!requireAdmin(ctx, res, false)) return;
         const days = Math.min(Math.max(parseInt((req.query as any).days || '30', 10) || 30, 1), 365);
         const channelId = (req.query as any).channelId
             ? parseInt(String((req.query as any).channelId), 10) : null;
+        // geo_block_event is a TypeORM entity table: its camelCase columns are quoted on Postgres.
         const where = channelId
-            ? 'createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) AND channelId = ?'
-            : 'createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)';
+            ? '\`createdAt\` >= DATE_SUB(NOW(), INTERVAL ? DAY) AND \`channelId\` = ?'
+            : '\`createdAt\` >= DATE_SUB(NOW(), INTERVAL ? DAY)';
         const params = channelId ? [days, channelId] : [days];
 
         const top = await adapterFor(this.connection.rawConnection).query(
@@ -642,17 +688,17 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             params,
         );
         const series = await adapterFor(this.connection.rawConnection).query(
-            `SELECT DATE(createdAt) AS day,
-                    SUM(decision='block') AS blocked,
-                    SUM(decision='soft-block') AS softBlocked
+            `SELECT DATE(\`createdAt\`) AS day,
+                    SUM(CASE WHEN decision='block' THEN 1 ELSE 0 END) AS blocked,
+                    SUM(CASE WHEN decision='soft-block' THEN 1 ELSE 0 END) AS softBlocked
              FROM geo_block_event WHERE ${where}
-             GROUP BY DATE(createdAt) ORDER BY day`,
+             GROUP BY DATE(\`createdAt\`) ORDER BY day`,
             params,
         );
         const totals = await adapterFor(this.connection.rawConnection).query(
             `SELECT
-                SUM(decision='block') AS blocked,
-                SUM(decision='soft-block') AS softBlocked,
+                SUM(CASE WHEN decision='block' THEN 1 ELSE 0 END) AS blocked,
+                SUM(CASE WHEN decision='soft-block' THEN 1 ELSE 0 END) AS softBlocked,
                 COUNT(*) AS total,
                 COUNT(DISTINCT ip) AS uniqueIps
              FROM geo_block_event WHERE ${where}`,
@@ -692,7 +738,10 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             allowedCountries: cfg.geoBlock.allowedCountries,
             blockedCountries: cfg.geoBlock.blockedCountries,
             allowedGbRegions: cfg.geoBlock.allowedGbRegions,
+            allowedSubdivisions: cfg.geoBlock.allowedSubdivisions,
         });
+        const opts = getOptions();
+        const sv = checkSchedule(parseJsonSafely<BusinessHoursSchedule>(row.schedule));
         return res.json({
             input: {
                 country: body.country || null,
@@ -700,7 +749,10 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
                 ip: body.ip || null,
             },
             verdict,
-            ipMatchesAllowlist: ipMatchesAny(body.ip, parseList(row.ipAllowlist || '')),
+            ipMatchesAllowlist: ipMatchesAny(normaliseIp(body.ip), parseList(row.ipAllowlist || '')),
+            bot: body.userAgent ? isAllowlistedBot(String(body.userAgent), opts.botAllowlist ?? 'strict') : null,
+            schedule: { inHours: sv.inHours, action: sv.action },
+            maintenance: !!(opts.maintenanceWindow && inWindow(opts.maintenanceWindow)),
             effectiveRules: cfg.geoBlock,
         });
     }
@@ -710,7 +762,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         if (!requireAdmin(ctx, res, true)) return;
         const olderThanDays = Math.max(1, parseInt(body?.olderThanDays || '90', 10) || 90);
         const result = await adapterFor(this.connection.rawConnection).query(
-            `DELETE FROM geo_block_event WHERE createdAt < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+            `DELETE FROM geo_block_event WHERE \`createdAt\` < DATE_SUB(NOW(), INTERVAL ? DAY)`,
             [olderThanDays],
             { needAffected: true },
         );
@@ -736,6 +788,8 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         res.type('application/javascript');
         res.setHeader('Cache-Control', `public, max-age=${maxAge}, stale-while-revalidate=${maxAge * 4}`);
         applySecurityHeaders(res);
+        // A <script src> is a no-cors load: the helper must be embeddable from the storefront's origin.
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
         return res.send(body);
     }
 
@@ -795,22 +849,31 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     // -- private helpers ---------------------------------------------------
 
     private async loadChannelRow(token: string): Promise<any | null> {
+        const hit = this.rowCache.get(token);
+        if (hit && hit.exp > Date.now()) return hit.row;
+        const row = await this.loadChannelRowUncached(token);
+        if (this.rowCache.size > 200) this.rowCache.clear();
+        this.rowCache.set(token, { row, exp: Date.now() + GeoBlockController.ROW_TTL_MS });
+        return row;
+    }
+
+    private async loadChannelRowUncached(token: string): Promise<any | null> {
         const rows = await adapterFor(this.connection.rawConnection).query(
             `SELECT id, token,
-                    customFieldsShowcompanynumber           AS showCompanyNumber,
-                    customFieldsBusinesscompanynumber       AS companyNumber,
-                    customFieldsGeoblockenabled             AS geoBlockEnabled,
-                    customFieldsGeoblockmode                AS geoBlockMode,
-                    customFieldsGeoblockallowedregions      AS allowedRegions,
-                    customFieldsGeoblockallowedcountries    AS extraAllowed,
-                    customFieldsGeoblockblockedcountries    AS blockedCountries,
-                    customFieldsGeoblockallowedgbregions    AS allowedGbRegions,
-                    customFieldsGeoblockallowedsubdivisions AS allowedSubdivisionsJson,
-                    customFieldsGeoblockipallowlist         AS ipAllowlist,
-                    customFieldsGeoblockblockmessage        AS blockMessage,
-                    customFieldsGeoblockblockredirecturl    AS blockRedirectUrl,
-                    customFieldsGeoblockblocklogourl        AS blockLogoUrl,
-                    customFieldsGeoblockschedule            AS schedule
+                    \`customFieldsShowcompanynumber\`           AS showCompanyNumber,
+                    \`customFieldsBusinesscompanynumber\`       AS companyNumber,
+                    \`customFieldsGeoblockenabled\`             AS geoBlockEnabled,
+                    \`customFieldsGeoblockmode\`                AS geoBlockMode,
+                    \`customFieldsGeoblockallowedregions\`      AS allowedRegions,
+                    \`customFieldsGeoblockallowedcountries\`    AS extraAllowed,
+                    \`customFieldsGeoblockblockedcountries\`    AS blockedCountries,
+                    \`customFieldsGeoblockallowedgbregions\`    AS allowedGbRegions,
+                    \`customFieldsGeoblockallowedsubdivisions\` AS allowedSubdivisionsJson,
+                    \`customFieldsGeoblockipallowlist\`         AS ipAllowlist,
+                    \`customFieldsGeoblockblockmessage\`        AS blockMessage,
+                    \`customFieldsGeoblockblockredirecturl\`    AS blockRedirectUrl,
+                    \`customFieldsGeoblockblocklogourl\`        AS blockLogoUrl,
+                    \`customFieldsGeoblockschedule\`            AS schedule
              FROM channel WHERE token = ? LIMIT 1`,
             [token],
         );
@@ -883,7 +946,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
                 decision: input.decision,
                 reason: input.reason.slice(0, 64),
             });
-            await repo.save(row);
+            await repo.insert(row);
         } catch (e: any) {
             Logger.warn(`geo-block event log failed: ${e?.message}`, loggerCtx);
         }

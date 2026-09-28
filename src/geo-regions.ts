@@ -306,10 +306,12 @@ export function isAllowed(
 /** Lightweight IP-in-CIDR check for the allowlist. Supports IPv4 only —
  * enough for the office IPs / payment-processor ranges that the admin
  * typically allowlists. IPv6 entries are checked as plain string match. */
-export function ipMatchesAny(ip: string | null | undefined, list: string[]): boolean {
-    if (!ip || !list?.length) return false;
+export function ipMatchesAny(ipRaw: string | null | undefined, list: string[]): boolean {
+    if (!ipRaw || !list?.length) return false;
+    // `req.ip` on a dual-stack listener is `::ffff:203.0.113.5`; compare the plain form, case-insensitively.
+    const ip = String(ipRaw).trim().replace(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i, '$1').toLowerCase();
     for (const entry of list) {
-        const trimmed = entry.trim();
+        const trimmed = entry.trim().toLowerCase().replace(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i, '$1');
         if (!trimmed) continue;
         if (trimmed === ip) return true;
         if (trimmed.includes('/') && ip.includes('.')) {

@@ -143,15 +143,15 @@ export class GeoBlockAdminResolver {
         // Channel-scoped: only return the channels the caller can see.
         const rows = await adapterFor(this.connection.rawConnection).query(
             `SELECT id AS channelId, token AS channelToken, code AS channelName,
-                    customFields_huloGeoBlockEnabled       AS enabled,
-                    customFields_huloGeoBlockMode          AS mode,
-                    customFields_huloGeoBlockAllowed       AS allowedCountries,
-                    customFields_huloGeoBlockBlocked       AS blockedCountries,
-                    customFields_huloGeoBlockGbRegions     AS allowedGbRegions,
-                    customFields_huloGeoBlockPreset        AS regionPreset,
-                    customFields_huloGeoBlockMessage       AS blockMessage,
-                    customFields_huloGeoBlockRedirectUrl   AS blockRedirectUrl,
-                    customFields_huloGeoBlockIpAllowlist   AS ipAllowlist
+                    \`customFieldsGeoblockenabled\`          AS enabled,
+                    \`customFieldsGeoblockmode\`             AS mode,
+                    \`customFieldsGeoblockallowedcountries\` AS allowedCountries,
+                    \`customFieldsGeoblockblockedcountries\` AS blockedCountries,
+                    \`customFieldsGeoblockallowedgbregions\` AS allowedGbRegions,
+                    \`customFieldsGeoblockallowedregions\`   AS regionPreset,
+                    \`customFieldsGeoblockblockmessage\`     AS blockMessage,
+                    \`customFieldsGeoblockblockredirecturl\` AS blockRedirectUrl,
+                    \`customFieldsGeoblockipallowlist\`      AS ipAllowlist
              FROM channel`,
             [],
         );
@@ -164,7 +164,7 @@ export class GeoBlockAdminResolver {
             allowedCountries: splitList(r.allowedCountries),
             blockedCountries: splitList(r.blockedCountries),
             allowedGbRegions: splitList(r.allowedGbRegions),
-            regionPreset: r.regionPreset || null,
+            regionPreset: splitList(r.regionPreset)[0] || null,
             blockMessage: r.blockMessage || null,
             blockRedirectUrl: r.blockRedirectUrl || null,
             ipAllowlist: splitList(r.ipAllowlist),
@@ -182,13 +182,13 @@ export class GeoBlockAdminResolver {
             throw new Error(premiumFeatureError('vendure-plugin-geo-block').message);
         }
         const days = Math.min(Math.max(Number(daysInput) || 30, 1), 365);
-        const where = `channelId = ? AND createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)`;
+        const where = `\`channelId\` = ? AND \`createdAt\` >= DATE_SUB(NOW(), INTERVAL ? DAY)`;
         const params = [channelId, days];
         const totals = await adapterFor(this.connection.rawConnection).query(
             `SELECT COUNT(*) AS totalEvents,
-                    SUM(decision = 'block')      AS blocked,
-                    SUM(decision = 'soft-block') AS softBlocked,
-                    SUM(decision = 'allow')      AS allowed
+                    SUM(CASE WHEN decision = 'block' THEN 1 ELSE 0 END)      AS blocked,
+                    SUM(CASE WHEN decision = 'soft-block' THEN 1 ELSE 0 END) AS softBlocked,
+                    SUM(CASE WHEN decision = 'allow' THEN 1 ELSE 0 END)      AS allowed
              FROM geo_block_event WHERE ${where}`,
             params,
         );
@@ -198,8 +198,8 @@ export class GeoBlockAdminResolver {
             params,
         );
         const daily = await adapterFor(this.connection.rawConnection).query(
-            `SELECT DATE(createdAt) AS day, COUNT(*) AS n FROM geo_block_event WHERE ${where}
-             GROUP BY day ORDER BY day`,
+            `SELECT DATE(\`createdAt\`) AS day, COUNT(*) AS n FROM geo_block_event WHERE ${where}
+             GROUP BY DATE(\`createdAt\`) ORDER BY day`,
             params,
         );
         const t = (totals as any[])[0] || {};
@@ -223,20 +223,21 @@ export class GeoBlockAdminResolver {
         if (!input?.channelToken) throw new Error('channelToken required');
         const set: string[] = [];
         const params: any[] = [];
+        // Same columns and JSON-array storage as the REST save route (the two used to disagree).
         const push = (col: string, val: any) => {
             if (val === undefined) return;
-            set.push(`${col} = ?`);
-            params.push(Array.isArray(val) ? val.join(',') : val);
+            set.push(`\`${col}\` = ?`);
+            params.push(Array.isArray(val) ? JSON.stringify(Array.from(new Set(val.filter((x: any) => typeof x === 'string').map((x: string) => x.trim()).filter(Boolean).slice(0, 500)))) : val);
         };
-        push('customFields_huloGeoBlockEnabled', input.enabled);
-        push('customFields_huloGeoBlockMode', input.mode);
-        push('customFields_huloGeoBlockAllowed', input.allowedCountries);
-        push('customFields_huloGeoBlockBlocked', input.blockedCountries);
-        push('customFields_huloGeoBlockGbRegions', input.allowedGbRegions);
-        push('customFields_huloGeoBlockPreset', input.regionPreset);
-        push('customFields_huloGeoBlockMessage', input.blockMessage);
-        push('customFields_huloGeoBlockRedirectUrl', input.blockRedirectUrl);
-        push('customFields_huloGeoBlockIpAllowlist', input.ipAllowlist);
+        push('customFieldsGeoblockenabled', input.enabled === undefined ? undefined : !!input.enabled);
+        push('customFieldsGeoblockmode', input.mode === undefined ? undefined : (input.mode === 'soft' ? 'soft' : 'block'));
+        push('customFieldsGeoblockallowedcountries', input.allowedCountries?.map((c: string) => c.toUpperCase()));
+        push('customFieldsGeoblockblockedcountries', input.blockedCountries?.map((c: string) => c.toUpperCase()));
+        push('customFieldsGeoblockallowedgbregions', input.allowedGbRegions?.map((c: string) => c.toUpperCase()));
+        push('customFieldsGeoblockallowedregions', input.regionPreset === undefined ? undefined : (input.regionPreset ? [String(input.regionPreset).toUpperCase()] : []));
+        push('customFieldsGeoblockblockmessage', input.blockMessage === undefined ? undefined : String(input.blockMessage).slice(0, 4000));
+        push('customFieldsGeoblockblockredirecturl', input.blockRedirectUrl === undefined ? undefined : (/^https?:\/\/[^\s]+$/i.test(String(input.blockRedirectUrl)) ? String(input.blockRedirectUrl).slice(0, 2048) : ''));
+        push('customFieldsGeoblockipallowlist', input.ipAllowlist);
         if (!set.length) throw new Error('no fields to update');
         params.push(input.channelToken);
         const result = await adapterFor(this.connection.rawConnection).query(
@@ -256,11 +257,11 @@ export class GeoBlockAdminResolver {
             throw new Error(premiumFeatureError('vendure-plugin-geo-block').message);
         }
         const rows = await adapterFor(this.connection.rawConnection).query(
-            `SELECT customFields_huloGeoBlockEnabled  AS enabled,
-                    customFields_huloGeoBlockAllowed  AS allowedCountries,
-                    customFields_huloGeoBlockBlocked  AS blockedCountries,
-                    customFields_huloGeoBlockGbRegions AS allowedGbRegions,
-                    customFields_huloGeoBlockMode     AS mode
+            `SELECT \`customFieldsGeoblockenabled\`          AS enabled,
+                    \`customFieldsGeoblockallowedcountries\` AS allowedCountries,
+                    \`customFieldsGeoblockblockedcountries\` AS blockedCountries,
+                    \`customFieldsGeoblockallowedgbregions\` AS allowedGbRegions,
+                    \`customFieldsGeoblockmode\`             AS mode
              FROM channel WHERE token = ?`,
             [input.channelToken],
         );

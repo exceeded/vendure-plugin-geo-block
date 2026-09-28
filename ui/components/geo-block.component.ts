@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnDestroy, OnInit, ChangeDetectorRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { NotificationService } from '@vendure/admin-ui/core';
 
@@ -955,7 +955,9 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         }
     `],
 })
-export class GeoBlockComponent implements OnInit {
+export class GeoBlockComponent implements OnInit, OnDestroy {
+    private restartTimer: any = null;
+    private copyTimer: any = null;
     loading = true;
     saving = false;
     channels: ChannelRow[] = [];
@@ -1022,7 +1024,7 @@ export class GeoBlockComponent implements OnInit {
         // gives the operator a "geo-block is on but not blocking
         // anyone yet" state so they can layer restrictions on.
         if (!this.current.allowedRegions?.length) {
-            this.current.allowedRegions = ['worldwide'];
+            this.current.allowedRegions = ['WORLDWIDE'];
         }
         try { localStorage.setItem(this.firstRunDismissKey, '1'); } catch {}
         this.markDirty();
@@ -1087,7 +1089,7 @@ export class GeoBlockComponent implements OnInit {
             this.cdr.markForCheck();
             return;
         }
-        setTimeout(() => {
+        this.restartTimer = setTimeout(() => {
             this.http.get<any>('/geo-block/licence/status').subscribe({
                 next: m => {
                     const v = m?.version || m?.update?.current;
@@ -1110,11 +1112,11 @@ export class GeoBlockComponent implements OnInit {
     cmdCopied = false;
 
     copyUpdateCmd() {
-        const cmd = `npm install &#64;huloglobal/vendure-plugin-geo-block@${this.licMeta?.update?.latest || 'latest'}`;
+        const cmd = `npm install @huloglobal/vendure-plugin-geo-block@${this.licMeta?.update?.latest || 'latest'}`;
         navigator.clipboard?.writeText(cmd).then(() => {
             this.cmdCopied = true;
             this.cdr.markForCheck();
-            setTimeout(() => { this.cmdCopied = false; this.cdr.markForCheck(); }, 2500);
+            this.copyTimer = setTimeout(() => { this.cmdCopied = false; this.cdr.markForCheck(); }, 2500);
         });
     }
 
@@ -1164,7 +1166,7 @@ export class GeoBlockComponent implements OnInit {
     }
     private startClaimPoll() { this.stopClaimPoll(); this.claimTimer = setInterval(() => this.checkClaim(false), 15000); }
     private stopClaimPoll() { if (this.claimTimer) { clearInterval(this.claimTimer); this.claimTimer = null; } }
-    ngOnDestroy() { this.stopClaimPoll(); }
+    ngOnDestroy() { this.stopClaimPoll(); clearTimeout(this.restartTimer); clearTimeout(this.copyTimer); }
 
     portalOpening = false;
     licenceLabel(): string {
@@ -1218,7 +1220,6 @@ export class GeoBlockComponent implements OnInit {
             next: r => { this.subdivisionsCatalogue = r.subdivisions || {}; this.cdr.markForCheck(); },
             error: () => { /* nice-to-have */ },
         });
-        this.loadStatus();
         this.reload();
     }
 
