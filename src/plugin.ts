@@ -4,6 +4,7 @@ import { GeoBlockEvent } from './geo-block-event.entity';
 import { GeoBlockController } from './geo-block.controller';
 import { GeoBlockAdminResolver, geoBlockAdminApiSchema } from './admin-api';
 import { REGION_PRESETS } from './geo-regions';
+import { GeoBlockEngagementService } from './engagement';
 import type { BotAllowlist } from './bot-detect';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -106,7 +107,7 @@ export function getOptions(): GeoBlockPluginOptions { return cachedOptions; }
 @VendurePlugin({
     imports: [PluginCommonModule],
     controllers: [GeoBlockController],
-    providers: [GeoBlockAdminResolver],
+    providers: [GeoBlockAdminResolver, GeoBlockEngagementService],
     entities: [GeoBlockEvent],
     compatibility: '^3.0.0',
     adminApiExtensions: {
@@ -211,8 +212,20 @@ export class GeoBlockPlugin {
     static startEvaluation(): void {
         if (!GeoBlockPlugin.evalClientInternal) {
             GeoBlockPlugin.evalClientInternal = new EvaluationClient({ packageName: PKG_NAME, packageVersion: PKG_VERSION });
+            if (GeoBlockPlugin.statsProvider) GeoBlockPlugin.evalClientInternal.setStatsProvider(GeoBlockPlugin.statsProvider);
             GeoBlockPlugin.evalClientInternal.start();
         }
+    }
+
+    /** Anonymous 30-day usage numbers (counts only) sent with the daily
+     *  evaluation ping and, after purchase, the heartbeat — so the licence
+     *  server's reminder and renewal emails can say what the plugin did.
+     *  Installed by `GeoBlockEngagementService` once the DB is reachable. */
+    private static statsProvider: (() => Promise<Record<string, number>>) | null = null;
+    static setStatsProvider(fn: () => Promise<Record<string, number>>): void {
+        GeoBlockPlugin.statsProvider = fn;
+        GeoBlockPlugin.evalClientInternal?.setStatsProvider(fn);
+        GeoBlockPlugin.heartbeat?.setStatsProvider(fn);
     }
 
     private static licenceHost = '';
@@ -319,6 +332,7 @@ export class GeoBlockPlugin {
                 packageVersion: PKG_VERSION,
                 licenceKey: options.licenceKey,
                 publicKeyFingerprint: fingerprintPublicKey(HULO_PUBLIC_KEY),
+                statsProvider: GeoBlockPlugin.statsProvider ?? undefined,
             });
             GeoBlockPlugin.heartbeat.start();
         }
@@ -334,6 +348,11 @@ export class GeoBlockPlugin {
                 route: 'geo-block',
                 ngModuleFileName: 'geo-block.module.ts',
                 ngModuleName: 'GeoBlockModule',
+            },
+            {
+                type: 'shared' as const,
+                ngModuleFileName: 'geo-block-nav.module.ts',
+                ngModuleName: 'GeoBlockNavModule',
             },
         ],
     };

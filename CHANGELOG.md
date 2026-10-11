@@ -4,6 +4,51 @@ All notable changes to `@huloglobal/vendure-plugin-geo-block` are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] — 2026-10-11
+
+Merchant engagement pass (licence-sdk 0.15.0).
+
+### Added
+- **Weekly report.** Every Monday at 08:00 (server time) the worker emails
+  what Geo Block did last week — hard blocks, soft blocks and distinct
+  addresses blocked, week-on-week — plus the next set-up step and the
+  licence lifecycle notice. Sent through the host's `SMTP_*` environment
+  (`nodemailer` is an optional peer dependency); off when SMTP is unset.
+  Recipient: the configured `supportEmail`, else the licence customer, else
+  the trial-reminder address. Settings, "Send me a test" and "Preview" live
+  on the admin page (`GET/POST /geo-block/digest/settings`,
+  `POST /geo-block/digest/send-test`, `GET /geo-block/digest/preview`).
+  Preferences are stored in the shared `hulo_plugin_prefs` table.
+- **Set-up checklist** on the admin landing page (`GET /geo-block/setup`):
+  rules set on a channel, block page customised, own IP allow-listed,
+  simulation run. Real checks against the channel rows; "Hide" is
+  remembered in the browser until a done item comes undone.
+- **Dashboard widget** "Geo Block" (Dashboard → Add widget): blocked,
+  soft-blocked and unique IPs over the last 7 days, the lifecycle notice
+  and a link to the page (`GET /geo-block/widget`).
+- **Admin navigation**: Settings → Geo Block (`GeoBlockNavModule`, shared).
+- **Usage numbers with the heartbeat.** The 30-day `requestsBlocked`,
+  `requestsSoftBlocked` and `uniqueIpsBlocked` counts already sent with the
+  evaluation ping now also go with the daily heartbeat after purchase, so
+  renewal emails can say what the plugin did.
+- `POST /geo-block/eval/remind-me` — "Email me before it ends" on the trial
+  banner, proxied to the licence server; the address is kept as the report
+  fallback recipient.
+- `GET /geo-block/licence/status` gains `notice` (trial/key lifecycle
+  sentence), `premiumFeatures` and `recentStats` (top 30-day figures).
+- Hero tile "Blocked · last 7 days" above the tabs, so the headline figure
+  is visible without opening Stats.
+
+### Changed
+- One update banner instead of two; "Dismiss" is remembered per version.
+- Licensed banner shows "renews automatically — current key valid until
+  <date>" for subscriptions and an amber notice in the last two weeks of a
+  key or trial. Trial and free banners list the premium features and a
+  "So far: …" line from real figures.
+- A 402 (premium feature) from Stats shows an unlock chip in the tab; other
+  402s and `licence-required` bodies produce one consistent toast.
+- `@huloglobal/vendure-licence-sdk` `^0.15.0`.
+
 ## [0.13.3] — 2026-09-28
 
 Follow-up to the 0.13.2 hardening pass.

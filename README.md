@@ -60,6 +60,19 @@ export const config: VendureConfig = {
 
 Add `GeoBlockPlugin.uiExtensions` to your `compileUiExtensions` config.
 
+### Admin UI
+
+- **Settings → Geo Block** in the admin navigation (shared
+  `GeoBlockNavModule`, registered by `uiExtensions`), opening the page at
+  `/admin/extensions/geo-block`: channel picker, Rules, Block page, IP
+  allowlist, Simulate and Stats tabs, with a live plain-English readout of
+  what the current rules do.
+- **Dashboard → Add widget → Geo Block**: blocked, soft-blocked and unique
+  IPs over the last 7 days, plus the licence lifecycle notice.
+- **Set-up checklist** and **Weekly report** cards on the landing page (see
+  below), the licence banner with buy-from-admin, and one update banner
+  when a new version is on npm.
+
 
 > **Visitor IP:** the plugin uses Express's `req.ip` (set `trustProxy` on the
 > Vendure host). Only list headers your edge sets and strips from clients in
@@ -152,6 +165,49 @@ Saves a MaxMind lookup per request.
 - Rate limiter on every public endpoint.
 - Security headers via the licence-sdk helper on every response.
 
+## Weekly report, setup checklist and dashboard widget
+
+**Weekly report.** Every Monday at 08:00 (server-local time) the worker
+process emails a short report: how many visits Geo Block hard-blocked and
+soft-blocked last week and how many distinct addresses that covered, each
+with the change against the week before, the next step from the set-up
+checklist, and — on a trial or the free tier — what a licence switches on.
+Every figure is a real count from `geo_block_event`; nothing is estimated.
+
+- **Who receives it:** the recipient saved on the admin page; otherwise the
+  plugin's `supportEmail` option, then the licence's customer email, then
+  the address entered in "Email me before it ends" on the trial banner. No
+  address → nothing is sent.
+- **How it is sent:** Geo Block has no mailer of its own, so the report uses
+  the host's `SMTP_SERVER` (or `SMTP_HOST`), `SMTP_PORT`, `SMTP_USER`,
+  `SMTP_PASSWORD` and `SMTP_FROM` environment variables through
+  `nodemailer`, which is an **optional** peer dependency — install it on
+  the host (`yarn add nodemailer`) to enable the report. Without SMTP the
+  report is simply off and the plugin logs one line saying so.
+- **Changing or stopping it:** Admin → Geo Block → *Weekly report* card —
+  toggle it off, set another recipient, **Send me a test** or **Preview**
+  this week's report in a new tab. Over HTTP: `GET/POST
+  /geo-block/digest/settings` (`{enabled?, recipient?}`),
+  `POST /geo-block/digest/send-test` (`{to?}`), `GET /geo-block/digest/preview`.
+- Preferences live in the shared `hulo_plugin_prefs` table (created on
+  boot); the weekly clock is multi-worker safe.
+
+**Set-up checklist** (`GET /geo-block/setup`) sits at the top of the admin
+page until every item is done: rules set on a channel, block page
+customised, your own IP allow-listed, a simulation run. "Hide" is remembered
+in the browser; the card returns if a done item comes undone. The same
+undone items are the "next steps" in the weekly report.
+
+**Dashboard widget.** Dashboard → Add widget → **Geo Block** shows the last
+7 days' blocked, soft-blocked and unique-IP counts (`GET /geo-block/widget`)
+with a link to the page. Stats stay a premium feature: on the free tier the
+widget and the Stats tab show an unlock prompt instead of figures.
+
+**Usage numbers.** The same 30-day counts (`requestsBlocked`,
+`requestsSoftBlocked`, `uniqueIpsBlocked`) are sent with the daily
+evaluation ping and, after purchase, the licence heartbeat — counts only,
+never addresses or URLs. `HULO_HEARTBEAT_DISABLED=true` stops the heartbeat.
+
 ## HTTP endpoints
 
 | Method | Path | Auth | Purpose |
@@ -166,6 +222,14 @@ Saves a MaxMind lookup per request.
 | `POST` | `/geo-block/admin/simulate` | admin | dry-run a hypothetical visitor |
 | `POST` | `/geo-block/admin/gc` | admin | prune old audit rows |
 | `GET` | `/geo-block/status` | admin | version + update status |
+| `GET` | `/geo-block/licence/status` | admin | licence, tier, lifecycle notice, premium features, recent stats |
+| `POST` | `/geo-block/eval/remind-me` | admin | "email me before the evaluation ends" opt-in |
+| `GET` | `/geo-block/setup` | admin | set-up checklist (`items`, `complete`) |
+| `GET` | `/geo-block/widget` | admin | dashboard widget feed (7-day figures) |
+| `GET` | `/geo-block/digest/settings` | admin | weekly report settings |
+| `POST` | `/geo-block/digest/settings` | admin | update `{enabled?, recipient?}` |
+| `POST` | `/geo-block/digest/send-test` | admin | send this week's report now `{to?}` |
+| `GET` | `/geo-block/digest/preview` | admin | this week's report as HTML |
 | `GET` | `/geo-block/hulo-geo.js` | public | storefront drop-in helper JS |
 | `GET` | `/geo-block/blocked` | public | branded block page (HTML or JSON) |
 

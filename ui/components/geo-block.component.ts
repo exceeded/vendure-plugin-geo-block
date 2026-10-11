@@ -49,6 +49,11 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <h2 class="hulo-hero-title">Site access</h2>
                     <p class="hulo-hero-sub">Decide who can see this storefront — by country, IP, business hours or bot. All rules apply per channel.</p>
                 </div>
+                <div class="hulo-hero-kpi" *ngIf="widget">
+                    <div class="hulo-hero-kpi-num" *ngIf="widget.tier !== 'free'">{{ widget.stats[0]?.value }}</div>
+                    <span class="unlock-chip" *ngIf="widget.tier === 'free'" title="Audit log and stats need a licence">🔒 Unlock</span>
+                    <div class="hulo-hero-kpi-label">Blocked · last 7 days</div>
+                </div>
                 <div class="hulo-hero-actions">
                     <button class="gbtn gbtn-hero hulo-help-btn" (click)="helpOpen = !helpOpen" [attr.aria-expanded]="helpOpen">
                         <clr-icon shape="help"></clr-icon>
@@ -72,7 +77,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <button class="gbtn gbtn-primary gbtn-sm" *ngIf="licMeta?.selfUpdate?.allowed" (click)="runSelfUpdate()" [disabled]="updating">{{ updating ? updateProgress : 'Update now' }}</button>
                     <button class="gbtn gbtn-outline gbtn-sm" (click)="copyUpdateCmd()">{{ cmdCopied ? 'Copied ✓' : 'Copy command' }}</button>
                     <a href="https://huloglobal.com/vendure-plugins/geo-block/changelog/" target="_blank" class="gbtn gbtn-outline gbtn-sm">What&rsquo;s new ↗</a>
-                    <button class="gbtn gbtn-outline gbtn-sm" (click)="updateDismissed = true">Dismiss</button>
+                    <button class="gbtn gbtn-outline gbtn-sm" (click)="dismissUpdate()">Dismiss</button>
                 </div>
             </div>
         </vdr-page-block>
@@ -89,6 +94,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <a href="https://huloglobal.com/vendure-plugins/geo-block/" target="_blank" class="gbtn gbtn-outline gbtn-sm">Details ↗</a>
                 </div>
             </div>
+            <div class="lic-notice" *ngIf="licMeta.notice">{{ licMeta.notice.message }}</div>
         </vdr-page-block>
         <vdr-page-block *ngIf="licMeta && !licMeta.licensed">
             <div class="lic-banner">
@@ -112,6 +118,20 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <a href="https://huloglobal.com/vendure-plugins/geo-block/" target="_blank" class="gbtn gbtn-outline gbtn-sm">Details ↗</a>
                 </div>
             </div>
+            <div class="lic-extra">
+                <div class="lic-line" *ngIf="licMeta.recentStats?.length">
+                    <strong>{{ licMeta.tier === 'free' && licMeta.eval?.source === 'server' ? 'During your evaluation' : 'So far' }}:</strong> {{ recentStatsLine() }}
+                </div>
+                <div class="lic-line" *ngIf="licMeta.premiumFeatures?.length">
+                    <strong>{{ licMeta.tier === 'trial' ? 'Included in your evaluation' : 'Switch on with a licence' }}:</strong> {{ licMeta.premiumFeatures.join(' · ') }}
+                </div>
+                <div class="lic-line lic-remind" *ngIf="licMeta.tier === 'trial'">
+                    <span>Email me before it ends:</span>
+                    <input class="lic-key" type="email" placeholder="you@example.com" [(ngModel)]="remindEmail" [disabled]="reminding || remindDone">
+                    <button class="gbtn gbtn-outline gbtn-sm" (click)="remindMe()" [disabled]="reminding || remindDone || !remindEmail">{{ remindDone ? 'We will email you ✓' : (reminding ? 'Saving…' : 'Remind me') }}</button>
+                </div>
+            </div>
+            <div class="lic-notice" *ngIf="licMeta.notice">{{ licMeta.notice.message }}</div>
         </vdr-page-block>
 
         <!-- Help drawer — collapsed by default. Plain-English steps
@@ -144,6 +164,55 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
             </div>
         </vdr-page-block>
 
+        <!-- Set-up checklist — real checks from GET /geo-block/setup.
+             Hidden once everything is done, or after "Hide" until an
+             item that was done comes undone again. -->
+        <vdr-page-block *ngIf="setup && setupVisible()">
+            <div class="card setup-card">
+                <div class="card-block">
+                    <div class="setup-head">
+                        <h3 class="step-title">Set-up checklist <small>{{ setupDoneCount() }} of {{ setup.items.length }} done</small></h3>
+                        <a class="setup-hide" (click)="hideSetup()">Hide</a>
+                    </div>
+                    <div class="setup-row" *ngFor="let it of setup.items">
+                        <span class="setup-dot" [class.done]="it.done" aria-hidden="true"></span>
+                        <div class="setup-text">
+                            <div class="setup-label">{{ it.label }}</div>
+                            <div class="setup-hint">{{ it.hint }}</div>
+                        </div>
+                        <a class="setup-link" *ngIf="!it.done" (click)="openSetupItem(it)">{{ it.url ? 'Open ↗' : 'Go →' }}</a>
+                    </div>
+                </div>
+            </div>
+        </vdr-page-block>
+
+        <!-- Weekly report — Monday 08:00 server-local, SMTP_* on the host. -->
+        <vdr-page-block *ngIf="digest">
+            <div class="card">
+                <div class="card-block">
+                    <div class="digest-head">
+                        <h3 class="step-title">Weekly report <small>Mondays 08:00, server time</small></h3>
+                        <span class="gb-switch-group">
+                            <button class="gb-switch" role="switch" [attr.aria-checked]="digest.enabled" [class.on]="digest.enabled" (click)="toggleDigest()" [disabled]="digestSaving" aria-label="Weekly report">
+                                <span class="gb-switch-knob" aria-hidden="true"></span>
+                            </button>
+                            <span class="gb-switch-label">{{ digest.enabled ? 'On' : 'Off' }}</span>
+                        </span>
+                    </div>
+                    <p class="hint">What Geo Block blocked last week, week-on-week, plus your next set-up step. Sent through the host's SMTP_* settings.</p>
+                    <div class="picker">
+                        <input class="form-input" type="email" [(ngModel)]="digestRecipient" [placeholder]="digest.defaultRecipient ? 'Defaults to ' + digest.defaultRecipient : 'Recipient email'" style="min-width:280px" [disabled]="digestSaving">
+                        <button class="gbtn gbtn-outline gbtn-sm" (click)="saveDigestRecipient()" [disabled]="digestSaving || digestRecipient === (digest.recipient || '')">{{ digestSaving ? 'Saving…' : 'Save' }}</button>
+                        <button class="gbtn gbtn-outline gbtn-sm" (click)="sendDigestTest()" [disabled]="digestSending">{{ digestSending ? 'Sending…' : 'Send me a test' }}</button>
+                        <button class="gbtn gbtn-outline gbtn-sm" (click)="previewDigest()" [disabled]="digestPreviewing">{{ digestPreviewing ? 'Opening…' : 'Preview' }}</button>
+                    </div>
+                    <p class="hint" style="margin:8px 0 0">
+                        Last sent {{ digest.lastSentAt ? (digest.lastSentAt | date:'d MMM y, HH:mm') : 'never' }} · next {{ digest.nextDueAt ? (digest.nextDueAt | date:'d MMM y, HH:mm') : '—' }}<span *ngIf="!digest.recipient && !digest.defaultRecipient"> · no recipient yet — enter one above</span>
+                    </p>
+                </div>
+            </div>
+        </vdr-page-block>
+
         <!-- Empty / first-run panel — shown when the channel exists
              but has never been configured. Gives the operator a
              one-click "turn on with sensible defaults" so they never
@@ -156,20 +225,6 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <p>Nothing is enforced yet. Pick a region preset below, or flip Site access on to start with an allow-list of Worldwide (nothing blocked).</p>
                 </div>
                 <button class="gbtn gbtn-primary" (click)="turnOnWithDefaults()">Turn on (Worldwide)</button>
-            </div>
-        </vdr-page-block>
-
-        <vdr-page-block *ngIf="updateBanner">
-            <div class="update-banner" [class.major]="updateBanner.isMajor">
-                <div>
-                    <strong>📦 Update available</strong>
-                    {{ updateBanner.packageName }} {{ updateBanner.current }} → <strong>{{ updateBanner.latest }}</strong>
-                    <span *ngIf="updateBanner.isMajor" class="major-pill">major</span>
-                </div>
-                <div class="actions">
-                    <a [href]="'https://github.com/exceeded/vendure-plugin-geo-block/releases/tag/v' + updateBanner.latest" target="_blank" class="gbtn gbtn-ghost gbtn-sm">Release notes ↗</a>
-                    <button class="gbtn gbtn-outline gbtn-sm" (click)="dismissUpdate()">Dismiss</button>
-                </div>
             </div>
         </vdr-page-block>
 
@@ -498,7 +553,11 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
                     <div class="card-block">
                         <h3 class="step-title">Block statistics <small>last {{ statsDays }} days</small></h3>
 
-                        <div *ngIf="!stats" class="hint">Loading…</div>
+                        <div *ngIf="statsLocked" class="unlock-box">
+                            <span class="unlock-chip">🔒 Premium</span>
+                            Audit log and blocked-traffic stats need a licence — start the free trial or activate a key at the top of this page.
+                        </div>
+                        <div *ngIf="!stats && !statsLocked" class="hint">Loading…</div>
                         <div *ngIf="stats">
                             <div class="kpi-row">
                                 <div class="kpi">
@@ -573,6 +632,13 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .upd-cmd { font-family: monospace; font-size: 12px; background: rgba(0,0,0,.06); padding: 2px 6px; border-radius: 5px; }
         [data-theme='dark'] .upd-cmd, :host-context([data-theme='dark']) .upd-cmd { background: rgba(255,255,255,.1); }
         .lic-key { padding:5px 9px; border:1px solid var(--gb-ui-border, #d1d5db); border-radius:7px; font-size:12.5px; min-width:280px; background:#fff; color:#0f172a; }
+        .lic-extra { margin-top:8px; display:flex; flex-direction:column; gap:6px; font-size:12.5px; color:var(--gb-strong); }
+        .lic-line { line-height:1.5; }
+        .lic-remind { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .lic-remind .lic-key { min-width:220px; }
+        .lic-notice { margin-top:8px; padding:10px 14px; border-radius:8px; font-size:13px; line-height:1.5; background:#fffbeb; border:1px solid #fcd34d; color:#92400e; }
+        .unlock-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:var(--gb-tint-warn, #fef3c7); border:1px solid var(--gb-line-warn, #fcd34d); color:var(--gb-strong); white-space:nowrap; }
+        .unlock-box { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px 14px; border-radius:8px; font-size:13px; color:var(--gb-strong); background:var(--gb-tint-warn); border:1px solid var(--gb-line-warn); }
 
         :host { display: block; color: var(--gb-strong); }
 
@@ -679,6 +745,10 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .hulo-hero-title { color: #fff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
         .hulo-hero-sub { color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 4px 0 0; max-width: 640px; }
         .hulo-hero-actions { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+        .hulo-hero-kpi { flex: 0 0 auto; text-align: right; padding: 0 18px; border-right: 1px solid rgba(255, 255, 255, 0.14); }
+        .hulo-hero-kpi-num { color: #fff; font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+        .hulo-hero-kpi-label { color: #cbd5e1; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 4px; }
+        .hulo-hero-kpi .unlock-chip { color: #231602; }
         .hulo-help-btn clr-icon { margin-right: 4px; }
 
         /* ── Help drawer + first-run ─────────────────────────────── */
@@ -708,6 +778,21 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         .hulo-firstrun h3 { margin: 0; font-size: 16px; color: var(--gb-strong); }
         .hulo-firstrun p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--gb-muted); max-width: 640px; }
         .hulo-firstrun .gbtn { margin-left: auto; flex: 0 0 auto; }
+
+        /* ── Set-up checklist + weekly report ────────────────────── */
+        .setup-card { border-left: 4px solid var(--gb-ok); }
+        .setup-head, .digest-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .setup-hide { font-size: 12px; font-weight: 600; color: var(--gb-muted); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+        .setup-hide:hover { color: var(--gb-strong); }
+        .setup-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-top: 1px solid var(--gb-line-soft); }
+        .setup-row:first-of-type { border-top: 0; }
+        .setup-dot { flex: 0 0 auto; width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--gb-ui-border); }
+        .setup-dot.done { background: var(--gb-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gb-ok) 25%, transparent); }
+        .setup-text { flex: 1 1 auto; min-width: 0; }
+        .setup-label { font-size: 13px; font-weight: 700; color: var(--gb-strong); }
+        .setup-hint { font-size: 12px; line-height: 1.5; color: var(--gb-muted); margin-top: 2px; }
+        .setup-link { flex: 0 0 auto; font-size: 12.5px; font-weight: 700; color: var(--gb-amber-edge); cursor: pointer; white-space: nowrap; }
+        .setup-link:hover { text-decoration: underline; }
 
         /* ── Unified card system ─────────────────────────────────── */
         .card {
@@ -948,6 +1033,7 @@ interface PresetMeta { key: string; label: string; kind: string; description: st
         }
         @media (max-width: 640px) {
             .hulo-hero { flex-wrap: wrap; }
+            .hulo-hero-kpi { border-right: 0; padding: 0; text-align: left; }
             .hulo-hero-actions { width: 100%; justify-content: flex-end; }
             .hulo-firstrun { flex-wrap: wrap; }
             .hulo-firstrun .gbtn { margin-left: 0; margin-top: 8px; width: 100%; }
@@ -980,6 +1066,8 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
 
     stats: any = null;
     statsDays = 30;
+    /** True after a 402 from admin/stats: the tab shows the unlock chip. */
+    statsLocked = false;
 
     /** Subdivisions: hidden by default. The catalogue is loaded from
      *  `/geo-block/subdivisions` on mount. */
@@ -987,7 +1075,6 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
     newSubdivisionCountry = '';
     subdivisionsCatalogue: Record<string, SubdivisionDef[]> = {};
 
-    updateBanner: { packageName: string; current: string; latest: string; isMajor: boolean } | null = null;
     private dismissKey = 'huloglobal-geo-block-update-dismissed';
     private firstRunDismissKey = 'huloglobal-geo-block-firstrun-dismissed';
 
@@ -1123,7 +1210,7 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
 
     loadLicMeta() {
         this.http.get<any>('/geo-block/licence/status').subscribe({
-            next: m => { this.licMeta = m; this.cdr.markForCheck(); },
+            next: m => { this.licMeta = m; this.updateDismissed = this.isUpdateDismissed(m); this.cdr.markForCheck(); },
             error: () => undefined,
         });
     }
@@ -1179,7 +1266,7 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
         if (l.trialEndsAt && new Date(l.trialEndsAt).getTime() > Date.now()) {
             return `free trial on the ${l.plan} plan — first charge on ${d(l.trialEndsAt)}; cancel any time before then via Manage billing`;
         }
-        return `${l.plan} subscription — renews automatically${l.expiresAt ? ' (current key valid until ' + d(l.expiresAt) + ')' : ''}`;
+        return `${l.plan} subscription — renews automatically${l.expiresAt ? ' — current key valid until ' + d(l.expiresAt) : ''}`;
     }
     openPortal() {
         this.portalOpening = true;
@@ -1213,6 +1300,9 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
     ngOnInit() {
         this.checkClaim(false);
         this.loadLicMeta();
+        this.loadSetup();
+        this.loadDigest();
+        this.loadWidget();
         this.http.get<{ presets: PresetMeta[] }>('/geo-block/presets').subscribe({
             next: r => {
                 this.presets = r.presets || [];
@@ -1281,25 +1371,135 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
         this.markDirty();
     }
 
-    loadStatus() {
-        this.http.get<any>('/geo-block/status').subscribe({
-            next: (s) => {
-                const u = s?.update;
-                if (!u?.updateAvailable || !u.latest) return;
-                let dismissed = '';
-                try { dismissed = localStorage.getItem(this.dismissKey) || ''; } catch {}
-                if (dismissed === u.latest) return;
-                this.updateBanner = { packageName: u.packageName, current: u.current, latest: u.latest, isMajor: !!u.isMajor };
-                this.cdr.markForCheck();
-            },
-            error: () => { /* nice-to-have */ },
+    /** One update banner; "Dismiss" remembers the version in localStorage
+     *  so it stays away until the next release. */
+    dismissUpdate() {
+        this.updateDismissed = true;
+        try { localStorage.setItem(this.dismissKey, this.licMeta?.update?.latest || '1'); } catch {}
+    }
+    private isUpdateDismissed(meta: any): boolean {
+        try { return !!meta?.update?.latest && localStorage.getItem(this.dismissKey) === meta.update.latest; } catch { return false; }
+    }
+
+    /** One message for any premium gate: a 402, or a licence error code in
+     *  the body — instead of a generic failure toast. */
+    errMsg(e: any, what: string): string {
+        const code = String(e?.error?.error || '');
+        if (e?.status === 402 || ['licence-required', 'licence_required', 'premium-feature'].includes(code)) {
+            return `${what} needs a licence — start the free trial or activate a key at the top of this page.`;
+        }
+        return e?.error?.message || code || `${what} failed`;
+    }
+
+    recentStatsLine(): string {
+        return (this.licMeta?.recentStats || []).map((s: any) => `${s.value} ${s.label}`).join(' · ');
+    }
+
+    // ── Trial reminder ───────────────────────────────────────────────
+    remindEmail = '';
+    reminding = false;
+    remindDone = false;
+    remindMe() {
+        const email = (this.remindEmail || '').trim();
+        if (!email || this.reminding) return;
+        this.reminding = true;
+        this.http.post<any>('/geo-block/eval/remind-me', { email }).subscribe({
+            next: () => { this.reminding = false; this.remindDone = true; this.notify.success('We will email you before the evaluation ends'); this.loadDigest(); this.cdr.markForCheck(); },
+            error: e => { this.reminding = false; this.notify.error(e?.status === 400 ? 'Enter a valid email address' : 'Could not reach the licence server — try again shortly'); this.cdr.markForCheck(); },
         });
     }
 
-    dismissUpdate() {
-        if (!this.updateBanner) return;
-        try { localStorage.setItem(this.dismissKey, this.updateBanner.latest); } catch {}
-        this.updateBanner = null;
+    // ── Set-up checklist ─────────────────────────────────────────────
+    setup: { items: Array<{ key: string; label: string; done: boolean; hint: string; tab?: string; url?: string }>; complete: boolean } | null = null;
+    private setupHiddenKey = 'hulo-vendure-plugin-geo-block-setup-hidden';
+    private setupHiddenDoneKey = 'hulo-vendure-plugin-geo-block-setup-hidden-done';
+    loadSetup() {
+        this.http.get<any>('/geo-block/setup').subscribe({
+            next: s => { this.setup = s; this.cdr.markForCheck(); },
+            error: () => { /* nice-to-have */ },
+        });
+    }
+    setupVisible(): boolean {
+        if (!this.setup || this.setup.complete) return false;
+        try {
+            if (localStorage.getItem(this.setupHiddenKey) !== '1') return true;
+            // Hidden earlier: show again only when something that was done then is undone now.
+            const doneThen = (localStorage.getItem(this.setupHiddenDoneKey) || '').split(',').filter(Boolean);
+            return doneThen.some(k => this.setup!.items.some(i => i.key === k && !i.done));
+        } catch { return true; }
+    }
+    setupDoneCount(): number { return (this.setup?.items || []).filter(i => i.done).length; }
+    hideSetup() {
+        try {
+            localStorage.setItem(this.setupHiddenKey, '1');
+            localStorage.setItem(this.setupHiddenDoneKey, (this.setup?.items || []).filter(i => i.done).map(i => i.key).join(','));
+        } catch {}
+        this.setup = this.setup ? { ...this.setup } : null;
+    }
+    openSetupItem(it: { tab?: string; url?: string }) {
+        if (it.url) { window.open(it.url, '_blank', 'noopener'); return; }
+        if (it.tab) {
+            this.tab = it.tab as any;
+            if (it.tab === 'stats') this.loadStats();
+            try { window.scrollTo({ top: document.body.scrollHeight / 3, behavior: 'smooth' }); } catch {}
+        }
+    }
+
+    // ── Weekly report ────────────────────────────────────────────────
+    digest: any = null;
+    digestRecipient = '';
+    digestSaving = false;
+    digestSending = false;
+    digestPreviewing = false;
+    loadDigest() {
+        this.http.get<any>('/geo-block/digest/settings').subscribe({
+            next: d => { this.digest = d; this.digestRecipient = d?.recipient || ''; this.cdr.markForCheck(); },
+            error: () => { /* nice-to-have */ },
+        });
+    }
+    private saveDigest(patch: { enabled?: boolean; recipient?: string | null }) {
+        this.digestSaving = true;
+        this.http.post<any>('/geo-block/digest/settings', patch).subscribe({
+            next: d => { this.digestSaving = false; this.digest = d; this.digestRecipient = d?.recipient || ''; this.notify.success('Weekly report settings saved'); this.cdr.markForCheck(); },
+            error: e => { this.digestSaving = false; this.notify.error(this.errMsg(e, 'Saving the weekly report settings')); this.cdr.markForCheck(); },
+        });
+    }
+    toggleDigest() { if (this.digest) this.saveDigest({ enabled: !this.digest.enabled }); }
+    saveDigestRecipient() { this.saveDigest({ recipient: (this.digestRecipient || '').trim() || null }); }
+    sendDigestTest() {
+        this.digestSending = true;
+        this.http.post<any>('/geo-block/digest/send-test', { to: (this.digestRecipient || '').trim() || undefined }).subscribe({
+            next: r => {
+                this.digestSending = false;
+                if (r?.sent) this.notify.success(`Test report sent to ${r.to}`);
+                else this.notify.error(r?.reason === 'no-recipient' ? 'Enter a recipient first' : `Could not send: ${r?.reason || 'unknown error'}`);
+                this.cdr.markForCheck();
+            },
+            error: e => { this.digestSending = false; this.notify.error(this.errMsg(e, 'Sending the test report')); this.cdr.markForCheck(); },
+        });
+    }
+    /** Fetched with the admin's auth, then opened from a Blob URL. */
+    previewDigest() {
+        this.digestPreviewing = true;
+        this.http.get('/geo-block/digest/preview', { responseType: 'text' }).subscribe({
+            next: html => {
+                this.digestPreviewing = false;
+                const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+                window.open(url, '_blank', 'noopener');
+                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                this.cdr.markForCheck();
+            },
+            error: e => { this.digestPreviewing = false; this.notify.error(this.errMsg(e, 'Preview')); this.cdr.markForCheck(); },
+        });
+    }
+
+    // ── Hero tile / dashboard figures ────────────────────────────────
+    widget: any = null;
+    loadWidget() {
+        this.http.get<any>('/geo-block/widget').subscribe({
+            next: w => { this.widget = w; this.cdr.markForCheck(); },
+            error: () => { /* nice-to-have */ },
+        });
     }
 
     reload() {
@@ -1336,6 +1536,7 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
         this.dirty = false;
         this.deriveStrategy();
         this.stats = null;
+        this.statsLocked = false;
         this.simResult = null;
     }
 
@@ -1544,10 +1745,11 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
                 this.dirty = false;
                 this.notify.success('Site access settings saved');
                 this.reload();
+                this.loadSetup();
             },
             error: (err) => {
                 this.saving = false;
-                this.notify.error(err?.error?.error || 'Save failed');
+                this.notify.error(this.errMsg(err, 'Saving'));
             },
         });
     }
@@ -1562,17 +1764,21 @@ export class GeoBlockComponent implements OnInit, OnDestroy {
             region: this.sim.region.trim().toUpperCase() || null,
             ip: this.sim.ip.trim() || null,
         }).subscribe({
-            next: r => { this.simResult = r; this.simBusy = false; this.cdr.markForCheck(); },
-            error: () => { this.simBusy = false; this.notify.error('Simulation failed'); },
+            next: r => { this.simResult = r; this.simBusy = false; this.loadSetup(); this.cdr.markForCheck(); },
+            error: e => { this.simBusy = false; this.notify.error(this.errMsg(e, 'Simulation')); this.cdr.markForCheck(); },
         });
     }
 
     loadStats() {
         if (!this.current) return;
-        if (this.stats) return; // load once on first visit
+        if (this.stats || this.statsLocked) return; // load once on first visit
         this.http.get<any>(`/geo-block/admin/stats?days=${this.statsDays}&channelId=${this.current.id}`).subscribe({
             next: s => { this.stats = s; this.cdr.markForCheck(); },
-            error: () => this.notify.error('Failed to load stats'),
+            error: e => {
+                if (e?.status === 402) this.statsLocked = true;
+                else this.notify.error(this.errMsg(e, 'Loading stats'));
+                this.cdr.markForCheck();
+            },
         });
     }
 }

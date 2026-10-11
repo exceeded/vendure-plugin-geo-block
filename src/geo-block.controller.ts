@@ -25,6 +25,7 @@ import { getRealIp, getResolvedCountry, getResolvedRegion, normaliseIp } from '.
 import { isAllowlistedBot, matchedBotEntry } from './bot-detect';
 import { BusinessHoursSchedule, checkSchedule } from './schedule';
 import { buildHuloGeoJs, buildBlockedPageHtml } from './storefront-assets';
+import { GeoBlockEngagementService, PREMIUM_FEATURES } from './engagement';
 
 const PLUGIN_ID_FOR_STORE = 'vendure-plugin-geo-block';
 const IP_SALT_STORE_KEY = 'vendure-plugin-geo-block:ipsalt';
@@ -147,6 +148,9 @@ const parseList = (raw: any, fallback: string[] = []): string[] => {
  *    GET  /geo-block/admin/stats       — block totals + top blocked countries
  *    POST /geo-block/admin/simulate    — "what would happen if a visitor from X visited?"
  *    POST /geo-block/admin/gc          — prune old GeoBlockEvent rows
+ *    GET  /geo-block/setup             — set-up checklist for the landing page
+ *    GET  /geo-block/widget            — dashboard widget feed (7-day figures)
+ *    GET/POST /geo-block/digest/*      — weekly report settings, test send, preview
  */
 @Controller('geo-block')
 export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestroy {
@@ -156,7 +160,11 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
     private rowCache = new Map<string, { row: any; exp: number }>();
     private static readonly ROW_TTL_MS = 10_000;
 
-    constructor(private connection: TransactionalConnection, private processContext: ProcessContext) {}
+    constructor(
+        private connection: TransactionalConnection,
+        private processContext: ProcessContext,
+        private engagement: GeoBlockEngagementService,
+    ) {}
 
     async onApplicationBootstrap(): Promise<void> {
         const opts = getOptions();
@@ -232,7 +240,89 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
             pkg: PLUGIN_ID_FOR_STORE,
             update: updater ? updater.getStatus() : null,
             selfUpdate: selfUpdateEnv(),
+            notice: this.engagement.notice(),
+            premiumFeatures: PREMIUM_FEATURES,
+            recentStats: await this.engagement.recentStats(),
         });
+    }
+
+    /** Admin opt-in: "email me before my evaluation ends". Proxied
+     *  server-to-server to the HULO licence server, which sends a welcome
+     *  email and runs the reminder drip. Explicit consent only — nothing is
+     *  sent anywhere unless the admin submits an address. */
+    @Post('eval/remind-me')
+    async evalRemindMe(@Ctx() ctx: RequestContext, @Res() res: Response, @Body() body: any) {
+        if (!requireAdmin(ctx, res, true)) return;
+        const email = String(body?.email || '').trim().slice(0, 320);
+        const instanceId = GeoBlockPlugin.getEvalInstanceId();
+        if (!/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(email) || !instanceId) return res.status(400).json({ error: 'bad-request' });
+        try {
+            const base = (process.env.HULO_LICENCE_EVAL_URL || 'https://elite.charity/licence/eval/register').replace(/\/register$/, '');
+            const resp = await fetch(`${base}/lead`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ plugin: GeoBlockPlugin.getPackageName(), instanceId, email }),
+                signal: AbortSignal.timeout(8_000),
+            });
+            if (!resp.ok) return res.status(502).json({ error: 'upstream', status: resp.status });
+            await this.engagement.setLeadEmail(email.toLowerCase());
+            return res.json({ ok: true });
+        } catch {
+            return res.status(502).json({ error: 'unreachable' });
+        }
+    }
+
+    // ── Weekly report ──────────────────────────────────────────────────
+    @Get('digest/settings')
+    async digestSettings(@Ctx() ctx: RequestContext, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, false)) return;
+        return res.json(await this.engagement.digest.settings());
+    }
+
+    @Post('digest/settings')
+    async digestUpdateSettings(@Ctx() ctx: RequestContext, @Res() res: Response, @Body() body: any) {
+        if (!requireAdmin(ctx, res, true)) return;
+        const patch: { enabled?: boolean; recipient?: string | null } = {};
+        if (typeof body?.enabled === 'boolean') patch.enabled = body.enabled;
+        if (body?.recipient !== undefined) patch.recipient = body.recipient === null ? null : String(body.recipient);
+        try {
+            return res.json(await this.engagement.digest.updateSettings(patch));
+        } catch (e: any) {
+            return res.status(400).json({ message: e?.message || 'Invalid settings' });
+        }
+    }
+
+    @Post('digest/send-test')
+    async digestSendTest(@Ctx() ctx: RequestContext, @Res() res: Response, @Body() body: any) {
+        if (!requireAdmin(ctx, res, true)) return;
+        const r = await this.engagement.digest.sendNow(String(body?.to || '').trim() || null);
+        return res.json({ sent: r.sent, to: r.to, reason: r.reason, subject: r.preview.subject });
+    }
+
+    /** This week's report as HTML, for the admin page's Preview button. */
+    @Get('digest/preview')
+    async digestPreview(@Ctx() ctx: RequestContext, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, false)) return;
+        const mail = await this.engagement.preview();
+        applySecurityHeaders(res);
+        res.type('text/html');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.send(mail.html);
+    }
+
+    /** Set-up checklist for the landing page (real checks, read-only). */
+    @Get('setup')
+    async setup(@Ctx() ctx: RequestContext, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, false)) return;
+        const items = await this.engagement.setupItems();
+        return res.json({ items, complete: items.every(i => i.done) });
+    }
+
+    /** Dashboard widget feed: tier, lifecycle notice and three 7-day figures. */
+    @Get('widget')
+    async widget(@Ctx() ctx: RequestContext, @Res() res: Response) {
+        if (!requireAdmin(ctx, res, false)) return;
+        return res.json(await this.engagement.widget());
     }
 
     /** One-click in-app update (owner-approved feature): installs a
@@ -764,6 +854,7 @@ export class GeoBlockController implements OnApplicationBootstrap, OnModuleDestr
         });
         const opts = getOptions();
         const sv = checkSchedule(parseJsonSafely<BusinessHoursSchedule>(row.schedule));
+        void this.engagement.markSimulated();
         return res.json({
             input: {
                 country: body.country || null,
