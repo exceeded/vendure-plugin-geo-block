@@ -239,13 +239,21 @@ export class GeoBlockPlugin {
         });
         if (status.valid) {
             GeoBlockPlugin.licenceStatus = status;
+            GeoBlockPlugin.activeLicenceKey = key;
             GeoBlockPlugin.evalClientInternal?.stop();
         }
         return status;
     }
 
+    /** The licence key currently in force (env/init key, admin-activated
+     *  key or purchase-claim-installed key) — read live by the heartbeat so
+     *  its `jti` and usage stats follow activations made after boot. */
+    private static activeLicenceKey: string | null | undefined = undefined;
+    static getActiveLicenceKey(): string | null | undefined { return GeoBlockPlugin.activeLicenceKey; }
+
     /** Drop an admin-activated key: back to unlicensed + evaluation. */
     static deactivateRuntimeLicence(): void {
+        GeoBlockPlugin.activeLicenceKey = null;
         GeoBlockPlugin.licenceStatus = {
             valid: false,
             message: 'No licence key configured. The plugin will run in unlicensed (degraded) mode.',
@@ -314,6 +322,7 @@ export class GeoBlockPlugin {
             revokedIds: GeoBlockPlugin.revocation.getRevokedIds(),
         });
         GeoBlockPlugin.licenceStatus = status;
+        GeoBlockPlugin.activeLicenceKey = status.valid ? options.licenceKey : undefined;
 
         if (!status.valid) {
             // Unlicensed: register the install (no premium is granted by this; the 14-day
@@ -331,6 +340,7 @@ export class GeoBlockPlugin {
                 packageName: PKG_NAME,
                 packageVersion: PKG_VERSION,
                 licenceKey: options.licenceKey,
+                licenceKeyProvider: () => GeoBlockPlugin.getActiveLicenceKey(),
                 publicKeyFingerprint: fingerprintPublicKey(HULO_PUBLIC_KEY),
                 statsProvider: GeoBlockPlugin.statsProvider ?? undefined,
             });
